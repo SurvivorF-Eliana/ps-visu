@@ -455,6 +455,75 @@ body {
   .hud > .panel, .hud > .panel:hover { transition: none !important; }
 }
 
+
+/* PS FOCUS DEPTH + STUDIO LIGHT */
+.hud { isolation: isolate; }
+.hud::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  inset: -100px -7% -70px;
+  background:
+    radial-gradient(ellipse 62% 34% at 50% 4%, rgba(var(--accent-rgb), .20), transparent 72%),
+    radial-gradient(ellipse 46% 28% at 50% 12%, rgba(225,245,255,.075), transparent 78%),
+    radial-gradient(ellipse 78% 50% at 50% 45%, rgba(var(--accent-rgb), .045), transparent 78%);
+  filter: blur(30px);
+  opacity: .95;
+}
+.hud > .panel {
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  box-shadow:
+    0 22px 48px rgba(0,0,0,.56),
+    0 5px 14px rgba(0,0,0,.42),
+    0 0 28px rgba(var(--accent-rgb), .045),
+    0 1px 0 rgba(255,255,255,.10) inset;
+  transition:
+    transform 220ms cubic-bezier(.16,.8,.24,1),
+    filter 220ms ease,
+    opacity 220ms ease,
+    box-shadow 220ms ease;
+}
+.hud.is-focusing > .panel:not(.is-focused) {
+  filter: blur(2.6px) brightness(.48) saturate(.68);
+  opacity: .58;
+  transform: translateZ(0) scale(.985);
+}
+.hud.is-focusing > .panel.is-focused {
+  position: relative;
+  z-index: 30;
+  transform: translateZ(88px) scale(1.045);
+  filter: brightness(1.12) saturate(1.08);
+  opacity: 1;
+  box-shadow:
+    0 38px 82px rgba(0,0,0,.72),
+    0 12px 28px rgba(0,0,0,.48),
+    0 0 42px rgba(var(--accent-rgb), .17),
+    0 1px 0 rgba(255,255,255,.16) inset;
+}
+.hud.is-focusing > .panel.is-focused::before {
+  opacity: 1;
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 0%, rgba(255,255,255,.095), transparent 62%),
+    radial-gradient(440px circle at var(--glow-x,50%) var(--glow-y,50%), rgba(var(--accent-rgb),.23), transparent 72%);
+}
+@media (max-width: 700px) {
+  .hud::after { inset: -35px -10px; filter: blur(22px); }
+  .hud.is-focusing > .panel:not(.is-focused) {
+    filter: none; opacity: 1; transform: none;
+  }
+  .hud.is-focusing > .panel.is-focused {
+    transform: none; filter: none;
+    box-shadow: 0 14px 32px rgba(0,0,0,.48);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud > .panel { transition: none !important; }
+  .hud.is-focusing > .panel:not(.is-focused) { filter: none; opacity: 1; }
+  .hud.is-focusing > .panel.is-focused { transform: none; }
+}
+
 </style>
 </head>
 <body>
@@ -597,60 +666,60 @@ body {
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const finePointer = window.matchMedia("(pointer: fine)").matches;
   const hud = document.querySelector(".hud");
-  if (reduceMotion || !finePointer || !hud) return;
+  if (!hud || !finePointer) return;
 
   let rafId = 0;
   let pointerX = 0.5;
   let pointerY = 0.5;
   let activePanel = null;
 
-  const render = () => {
-    rafId = 0;
-    const rotateX = (0.5 - pointerY) * 14;
-    const rotateY = (pointerX - 0.5) * 18;
+  const resetPanel = () => {
+    if (!activePanel) return;
+    activePanel.classList.remove("is-focused");
+    activePanel.style.setProperty("--glow-x", "50%");
+    activePanel.style.setProperty("--glow-y", "50%");
+    activePanel = null;
+    hud.classList.remove("is-focusing");
+  };
 
-    hud.style.setProperty("--scene-rx", `${rotateX.toFixed(2)}deg`);
-    hud.style.setProperty("--scene-ry", `${rotateY.toFixed(2)}deg`);
+  const renderScene = () => {
+    rafId = 0;
+    if (reduceMotion) return;
+    hud.style.setProperty("--scene-rx", `${((0.5 - pointerY) * 14).toFixed(2)}deg`);
+    hud.style.setProperty("--scene-ry", `${((pointerX - 0.5) * 18).toFixed(2)}deg`);
     hud.style.setProperty("--pointer-x", `${(pointerX * 100).toFixed(1)}%`);
     hud.style.setProperty("--pointer-y", `${(pointerY * 100).toFixed(1)}%`);
   };
 
   hud.addEventListener("pointermove", (event) => {
     if (event.pointerType === "touch") return;
-
     const rect = hud.getBoundingClientRect();
     pointerX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     pointerY = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
 
     const panel = event.target.closest(".panel");
-    if (panel && panel !== activePanel) {
-      if (activePanel) {
-        activePanel.style.setProperty("--glow-x", "50%");
-        activePanel.style.setProperty("--glow-y", "50%");
-      }
+    if (panel && panel.parentElement === hud && panel !== activePanel) {
+      resetPanel();
       activePanel = panel;
+      activePanel.classList.add("is-focused");
+      hud.classList.add("is-focusing");
+    } else if (!panel || panel.parentElement !== hud) {
+      resetPanel();
     }
 
     if (activePanel) {
-      const panelRect = activePanel.getBoundingClientRect();
-      const localX = (event.clientX - panelRect.left) / panelRect.width;
-      const localY = (event.clientY - panelRect.top) / panelRect.height;
-      activePanel.style.setProperty("--glow-x", `${(localX * 100).toFixed(1)}%`);
-      activePanel.style.setProperty("--glow-y", `${(localY * 100).toFixed(1)}%`);
+      const r = activePanel.getBoundingClientRect();
+      activePanel.style.setProperty("--glow-x", `${(((event.clientX-r.left)/r.width)*100).toFixed(1)}%`);
+      activePanel.style.setProperty("--glow-y", `${(((event.clientY-r.top)/r.height)*100).toFixed(1)}%`);
     }
-
-    if (!rafId) rafId = requestAnimationFrame(render);
+    if (!rafId) rafId = requestAnimationFrame(renderScene);
   }, { passive: true });
 
   hud.addEventListener("pointerleave", () => {
     pointerX = 0.5;
     pointerY = 0.5;
-    if (activePanel) {
-      activePanel.style.setProperty("--glow-x", "50%");
-      activePanel.style.setProperty("--glow-y", "50%");
-      activePanel = null;
-    }
-    if (!rafId) rafId = requestAnimationFrame(render);
+    resetPanel();
+    if (!rafId) rafId = requestAnimationFrame(renderScene);
   }, { passive: true });
 })();
 </script>
