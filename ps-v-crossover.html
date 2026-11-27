@@ -872,6 +872,69 @@ body {
   opacity: 1;
 }
 
+
+/* PS INTERACTION FIX + UI SCALE V10 */
+.page-parallax-mask {
+  z-index: 0 !important;
+  pointer-events: none !important;
+}
+.page-parallax-mask::before,
+.page-parallax-mask::after {
+  pointer-events: none !important;
+}
+.hud,
+.footer {
+  position: relative;
+  z-index: 2 !important;
+  pointer-events: auto !important;
+  zoom: .9;
+}
+.hud > .panel,
+.hud > .panel * {
+  pointer-events: auto;
+}
+.hud .controls,
+.hud .controls *,
+.hud .tabs,
+.hud .tabs *,
+.hud .slider-wrap,
+.hud .slider-wrap * {
+  pointer-events: auto !important;
+}
+.file-wrap {
+  position: relative;
+  z-index: 10;
+  isolation: isolate;
+}
+.file-wrap button {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+.file-wrap input[type="file"] {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  pointer-events: auto !important;
+}
+.hud button,
+.hud input,
+.hud label,
+.hud select,
+.hud a {
+  position: relative;
+  z-index: 2;
+}
+@media (max-width: 700px) {
+  .hud { zoom: .9; width: 100%; }
+  .footer { zoom: .9; }
+}
+
 </style>
 </head>
 <body>
