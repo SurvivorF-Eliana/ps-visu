@@ -249,6 +249,85 @@ button:focus-visible, input:focus-visible, label:focus-visible {
   .panel { transform: none !important; will-change: auto; }
 }
 
+
+/* PS SCENE PARALLAX V2 */
+.hud {
+  position: relative;
+  isolation: isolate;
+  transform-style: preserve-3d;
+  transform-origin: 50% 50%;
+  transform: perspective(1050px)
+    rotateX(var(--scene-rx, 0deg))
+    rotateY(var(--scene-ry, 0deg));
+  transition: transform 110ms cubic-bezier(.2,.75,.25,1);
+}
+.hud::before {
+  content: "";
+  position: absolute;
+  inset: -8%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .9;
+  background: radial-gradient(
+    560px circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+    rgba(var(--accent-rgb), .13),
+    rgba(120, 70, 255, .055) 34%,
+    transparent 72%
+  );
+}
+.hud > .panel {
+  z-index: 1;
+  transform: translateZ(var(--panel-depth, 18px));
+  transition:
+    transform 160ms cubic-bezier(.2,.75,.25,1),
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+  box-shadow:
+    0 8px 26px rgba(0,0,0,.48),
+    0 1px 0 rgba(255,255,255,.035) inset;
+}
+.hud > .panel:hover {
+  transform: translateZ(calc(var(--panel-depth, 18px) + 12px));
+  border-color: rgba(var(--accent-rgb), .48);
+  box-shadow:
+    0 18px 42px rgba(0,0,0,.58),
+    0 0 26px rgba(var(--accent-rgb), .075),
+    0 1px 0 rgba(255,255,255,.06) inset;
+}
+.p-header { --panel-depth: 30px; }
+.p-main { --panel-depth: 26px; }
+.p-meters, .p-spatial { --panel-depth: 21px; }
+.p-crossover { --panel-depth: 16px; }
+.p-queue { --panel-depth: 12px; }
+.hud > .panel::before {
+  background: radial-gradient(
+    440px circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    rgba(var(--accent-rgb), .19),
+    rgba(120, 70, 255, .06) 38%,
+    transparent 72%
+  );
+  opacity: .0;
+  transition: opacity 140ms ease;
+}
+.hud > .panel:hover::before { opacity: 1; }
+@media (max-width: 700px) {
+  .hud {
+    transform: none !important;
+    transform-style: flat;
+  }
+  .hud > .panel,
+  .hud > .panel:hover {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud, .hud > .panel, .hud::before, .hud > .panel::before {
+    transition: none !important;
+  }
+  .hud { transform: none !important; }
+  .hud > .panel, .hud > .panel:hover { transform: none !important; }
+}
+
 </style>
 </head>
 <body>
@@ -387,29 +466,62 @@ button:focus-visible, input:focus-visible, label:focus-visible {
 (() => {
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const finePointer = window.matchMedia("(pointer: fine)").matches;
-  if (reduceMotion || !finePointer) return;
+  const hud = document.querySelector(".hud");
+  if (reduceMotion || !finePointer || !hud) return;
 
-  document.querySelectorAll(".panel").forEach((panel) => {
-    panel.addEventListener("pointermove", (event) => {
-      const rect = panel.getBoundingClientRect();
-      const x = (event.clientX - rect.left) / rect.width;
-      const y = (event.clientY - rect.top) / rect.height;
-      const rotateY = (x - 0.5) * 2.4;
-      const rotateX = (0.5 - y) * 2.4;
+  let rafId = 0;
+  let pointerX = 0.5;
+  let pointerY = 0.5;
+  let activePanel = null;
 
-      panel.style.setProperty("--rx", `${rotateX.toFixed(2)}deg`);
-      panel.style.setProperty("--ry", `${rotateY.toFixed(2)}deg`);
-      panel.style.setProperty("--glow-x", `${(x * 100).toFixed(1)}%`);
-      panel.style.setProperty("--glow-y", `${(y * 100).toFixed(1)}%`);
-    }, { passive: true });
+  const render = () => {
+    rafId = 0;
+    const rotateX = (0.5 - pointerY) * 14;
+    const rotateY = (pointerX - 0.5) * 18;
 
-    panel.addEventListener("pointerleave", () => {
-      panel.style.setProperty("--rx", "0deg");
-      panel.style.setProperty("--ry", "0deg");
-      panel.style.setProperty("--glow-x", "50%");
-      panel.style.setProperty("--glow-y", "50%");
-    }, { passive: true });
-  });
+    hud.style.setProperty("--scene-rx", `${rotateX.toFixed(2)}deg`);
+    hud.style.setProperty("--scene-ry", `${rotateY.toFixed(2)}deg`);
+    hud.style.setProperty("--pointer-x", `${(pointerX * 100).toFixed(1)}%`);
+    hud.style.setProperty("--pointer-y", `${(pointerY * 100).toFixed(1)}%`);
+  };
+
+  hud.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "touch") return;
+
+    const rect = hud.getBoundingClientRect();
+    pointerX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    pointerY = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+
+    const panel = event.target.closest(".panel");
+    if (panel && panel !== activePanel) {
+      if (activePanel) {
+        activePanel.style.setProperty("--glow-x", "50%");
+        activePanel.style.setProperty("--glow-y", "50%");
+      }
+      activePanel = panel;
+    }
+
+    if (activePanel) {
+      const panelRect = activePanel.getBoundingClientRect();
+      const localX = (event.clientX - panelRect.left) / panelRect.width;
+      const localY = (event.clientY - panelRect.top) / panelRect.height;
+      activePanel.style.setProperty("--glow-x", `${(localX * 100).toFixed(1)}%`);
+      activePanel.style.setProperty("--glow-y", `${(localY * 100).toFixed(1)}%`);
+    }
+
+    if (!rafId) rafId = requestAnimationFrame(render);
+  }, { passive: true });
+
+  hud.addEventListener("pointerleave", () => {
+    pointerX = 0.5;
+    pointerY = 0.5;
+    if (activePanel) {
+      activePanel.style.setProperty("--glow-x", "50%");
+      activePanel.style.setProperty("--glow-y", "50%");
+      activePanel = null;
+    }
+    if (!rafId) rafId = requestAnimationFrame(render);
+  }, { passive: true });
 })();
 </script>
 
