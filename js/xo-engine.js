@@ -383,6 +383,23 @@ function pearson(a, b) {
 
 function isMonoActive() { return monoEnabled || bassMonoEnabled; }
 
+// Read-only RMS tap for the 3D presentation layer. Does not connect or alter audio nodes.
+function readAnalyserRms(analyser, rightAnalyser = null) {
+  if (!analyser) return 0;
+  const left = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(left);
+  let sum = 0;
+  for (let i = 0; i < left.length; i++) sum += left[i] * left[i];
+
+  if (rightAnalyser) {
+    const right = new Float32Array(rightAnalyser.fftSize);
+    rightAnalyser.getFloatTimeDomainData(right);
+    for (let i = 0; i < right.length; i++) sum += right[i] * right[i];
+    return Math.min(1, Math.sqrt(sum / (left.length + right.length)) * 4);
+  }
+  return Math.min(1, Math.sqrt(sum / left.length) * 4);
+}
+
 function engineLoop(timestamp) {
   if (!isPlaying) { animId = null; return; }
   const cur = ctx.currentTime - startTime + pausedAt;
@@ -465,6 +482,15 @@ function engineLoop(timestamp) {
     const hL = new Float32Array(anaHighL.fftSize), hR = new Float32Array(anaHighR.fftSize);
     anaHighL.getFloatTimeDomainData(hL); anaHighR.getFloatTimeDomainData(hR);
     document.getElementById('corrHighVal').textContent = pearson(hL, hR).toFixed(2);
+  }
+
+  if (updateDom && window.PSScene3D?.setAudioMetrics) {
+    window.PSScene3D.setAudioMetrics({
+      low: readAnalyserRms(anaLowL, anaLowR),
+      mid: readAnalyserRms(anaMidL, anaMidR),
+      high: readAnalyserRms(anaHighL, anaHighR),
+      rms: readAnalyserRms(anaMain)
+    });
   }
 
   if (updateDom) {
