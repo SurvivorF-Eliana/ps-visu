@@ -103,6 +103,24 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
     rings.add(ring);
   }
 
+  // Kick-triggered horizontal shockwaves, independent from sustained bass.
+  const shockwaveMeshes = [];
+  const shockwaveAges = [2, 2, 2];
+  let shockwaveCursor = 0;
+  let previousKick = 0;
+  for (let i = 0; i < shockwaveAges.length; i++) {
+    const material = new THREE.MeshBasicMaterial({
+      color: accent, transparent: true, opacity: 0, depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const wave = new THREE.Mesh(new THREE.TorusGeometry(1, 0.018, 6, 128), material);
+    wave.rotation.x = Math.PI / 2;
+    wave.position.set(0, -2.45, -1.0);
+    wave.scale.setScalar(0.8);
+    root.add(wave);
+    shockwaveMeshes.push(wave);
+  }
+
   // Three band clusters: LOW / MID / HIGH represented as separate depth planes.
   const bandGroups = [];
   const bandSpecs = [
@@ -143,15 +161,55 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
   }
   const particleGeometry = new THREE.BufferGeometry();
   particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
-  const particles = new THREE.Points(particleGeometry, new THREE.PointsMaterial({
+  const particleMaterial = new THREE.PointsMaterial({
     color: 0x9db9bd, size: 0.035, transparent: true, opacity: 0.42,
     sizeAttenuation: true, depthWrite: false
-  }));
+  });
+  const particles = new THREE.Points(particleGeometry, particleMaterial);
   root.add(particles);
 
   let targetX = 0, targetY = 0, pointerX = 0, pointerY = 0;
-  let low = 0, mid = 0, high = 0, rms = 0;
+  let low = 0, sub = 0, bass = 0, mid = 0, high = 0, rms = 0;
+  let kick = 0, transient = 0, width = 0;
   let hasAudioMetrics = false;
+  const defaultRoutes = [
+    { id: "r-kick-wave", source: "kick", target: "shockwave", amount: 1.0, threshold: 0.04, attack: 0.008, release: 0.16, curve: "linear", invert: false, enabled: true },
+    { id: "r-sub-rings", source: "sub", target: "rings", amount: 0.9, threshold: 0.02, attack: 0.025, release: 0.24, curve: "expo", invert: false, enabled: true },
+    { id: "r-bass-ground", source: "bass", target: "terrain", amount: 1.0, threshold: 0.02, attack: 0.06, release: 0.3, curve: "linear", invert: false, enabled: true },
+    { id: "r-mid-core", source: "mid", target: "core", amount: 0.9, threshold: 0.02, attack: 0.04, release: 0.2, curve: "linear", invert: false, enabled: true },
+    { id: "r-high-particles", source: "high", target: "particles", amount: 1.0, threshold: 0.02, attack: 0.008, release: 0.11, curve: "log", invert: false, enabled: true },
+    { id: "r-low-bars", source: "low", target: "bars.low", amount: 1.0, threshold: 0.01, attack: 0.025, release: 0.15, curve: "linear", invert: false, enabled: true },
+    { id: "r-mid-bars", source: "mid", target: "bars.mid", amount: 1.0, threshold: 0.01, attack: 0.03, release: 0.16, curve: "linear", invert: false, enabled: true },
+    { id: "r-high-bars", source: "high", target: "bars.high", amount: 1.0, threshold: 0.01, attack: 0.01, release: 0.1, curve: "log", invert: false, enabled: true },
+    { id: "r-width-spread", source: "width", target: "stereo", amount: 0.8, threshold: 0.02, attack: 0.12, release: 0.35, curve: "linear", invert: false, enabled: true },
+    { id: "r-kick-camera", source: "kick", target: "camera", amount: 0.35, threshold: 0.08, attack: 0.006, release: 0.1, curve: "expo", invert: false, enabled: true }
+  ];
+  const visualConfig = { preset: "OBSERVATORY", motion: !reducedMotion, routes: defaultRoutes.map(route => ({ ...route })) };
+  const audioMetrics = { low: 0, sub: 0, bass: 0, mid: 0, high: 0, rms: 0, kick: 0, transient: 0, width: 0 };
+  const routeMemory = new Map();
+  const clamp01 = value => THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
+  function routeEnergy(target, fallback, deltaSeconds = 1 / 60) {
+    const configured = visualConfig.routes.filter(route => route.target === target);
+    if (!configured.length) return clamp01(fallback);
+    const active = configured.filter(route => route.enabled !== false);
+    if (!active.length) return 0;
+    const energy = active.reduce((sum, route, index) => {
+      const input = clamp01(audioMetrics[route.source]);
+      const threshold = clamp01(route.threshold);
+      let raw = THREE.MathUtils.clamp((input - threshold) / Math.max(0.001, 1 - threshold), 0, 1);
+      if (route.invert) raw = 1 - raw;
+      if (route.curve === "expo") raw *= raw;
+      else if (route.curve === "log") raw = Math.log1p(raw * 9) / Math.log(10);
+      const key = String(route.id || (route.source + ":" + route.target + ":" + index));
+      const previous = routeMemory.get(key) || 0;
+      const time = raw > previous ? route.attack : route.release;
+      const coefficient = 1 - Math.exp(-deltaSeconds / Math.max(0.005, Number(time) || 0.02));
+      const current = previous + (raw - previous) * coefficient;
+      routeMemory.set(key, current);
+      return sum + current * Math.max(0, Number(route.amount) || 0);
+    }, 0);
+    return clamp01(energy);
+  }
   let raf = 0, running = !document.hidden;
   const clock = new THREE.Clock();
   const panels = [...hud.querySelectorAll(":scope > .panel")];
@@ -159,13 +217,55 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
   let activePanel = null;
 
   function setAudioMetrics(metrics = {}) {
-    low = THREE.MathUtils.clamp(Number(metrics.low) || 0, 0, 1);
-    mid = THREE.MathUtils.clamp(Number(metrics.mid) || 0, 0, 1);
-    high = THREE.MathUtils.clamp(Number(metrics.high) || 0, 0, 1);
-    rms = THREE.MathUtils.clamp(Number(metrics.rms) || 0, 0, 1);
+    low = clamp01(metrics.low);
+    sub = clamp01(metrics.sub);
+    bass = clamp01(metrics.bass ?? metrics.low);
+    mid = clamp01(metrics.mid);
+    high = clamp01(metrics.high);
+    rms = clamp01(metrics.rms);
+    kick = clamp01(metrics.kick);
+    transient = clamp01(metrics.transient);
+    width = clamp01(metrics.width);
+    Object.assign(audioMetrics, { low, sub, bass, mid, high, rms, kick, transient, width });
     hasAudioMetrics = true;
   }
-  window.PSScene3D = Object.freeze({ setAudioMetrics });
+
+  function setVisualConfig(next = {}) {
+    if (["OBSERVATORY", "MACHINE", "SIGNAL", "VOID"].includes(next.preset)) visualConfig.preset = next.preset;
+    if (typeof next.motion === "boolean") visualConfig.motion = next.motion;
+    if (Array.isArray(next.routes)) {
+      visualConfig.routes = next.routes.slice(0, 32).map((route, index) => ({
+        id: String(route.id || ("route-" + index)),
+        source: String(route.source || "rms"),
+        target: String(route.target || "core"),
+        amount: THREE.MathUtils.clamp(Number(route.amount) || 0, 0, 2),
+        threshold: clamp01(route.threshold),
+        attack: THREE.MathUtils.clamp(Number(route.attack) || 0.02, 0.005, 1),
+        release: THREE.MathUtils.clamp(Number(route.release) || 0.15, 0.005, 2),
+        curve: ["linear", "expo", "log"].includes(route.curve) ? route.curve : "linear",
+        invert: route.invert === true,
+        enabled: route.enabled !== false
+      }));
+      routeMemory.clear();
+    }
+    if (visualConfig.motion && running && !raf) raf = requestAnimationFrame(render);
+    if (!visualConfig.motion && reducedMotion && raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      renderer.render(scene, camera);
+    }
+  }
+
+  function setAccent(value) {
+    const color = new THREE.Color(value);
+    keyLight.color.copy(color);
+    innerCore.material.color.copy(color);
+    edgeLines.material.color.copy(color);
+    shockwaveMeshes.forEach(wave => wave.material.color.copy(color));
+    rings.children.forEach(ring => ring.material.color.copy(color));
+  }
+
+  window.PSScene3D = Object.freeze({ setAudioMetrics, setVisualConfig, setAccent });
 
   function onPointerMove(event) {
     if (event.pointerType === "touch") return;
@@ -194,13 +294,16 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
     raf = 0;
     if (!running) return;
     const dt = Math.min(clock.getDelta(), 0.05);
-    const t = clock.elapsedTime;
+    const t = visualConfig.motion ? clock.elapsedTime : 0;
     const damping = 1 - Math.exp(-dt * 5.5);
-    pointerX += (targetX - pointerX) * damping;
-    pointerY += (targetY - pointerY) * damping;
+    const motionFactor = visualConfig.motion ? 1 : 0;
+    pointerX += ((targetX * motionFactor) - pointerX) * damping;
+    pointerY += ((targetY * motionFactor) - pointerY) * damping;
 
     camera.position.x += (pointerX * 0.72 - camera.position.x) * damping;
     camera.position.y += (4.2 + pointerY * 0.48 - camera.position.y) * damping;
+    const cameraEnergy = routeEnergy("camera", kick, dt);
+    camera.position.z += (19 - cameraEnergy * 0.16 - camera.position.z) * damping;
     camera.lookAt(pointerX * 0.22, pointerY * 0.12, -0.8);
     root.rotation.y += (pointerX * 0.035 - root.rotation.y) * damping;
     root.rotation.x += (pointerY * 0.018 - root.rotation.x) * damping;
@@ -208,24 +311,49 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
     const lowPulse = hasAudioMetrics ? low : (0.035 + Math.sin(t * 0.7) * 0.012);
     const midPulse = hasAudioMetrics ? mid : (0.025 + Math.sin(t * 1.1 + 1) * 0.01);
     const highPulse = hasAudioMetrics ? high : (0.02 + Math.sin(t * 2.1 + 2) * 0.008);
+    const presetScale = visualConfig.preset === "MACHINE" ? 1.22
+      : visualConfig.preset === "SIGNAL" ? 1.1
+      : visualConfig.preset === "VOID" ? 0.48 : 1;
+    const terrainEnergy = routeEnergy("terrain", lowPulse, dt) * presetScale;
+    const coreEnergy = routeEnergy("core", midPulse, dt) * presetScale;
+    const subEnergy = routeEnergy("rings", sub, dt) * presetScale;
+    const particleEnergy = routeEnergy("particles", highPulse, dt) * presetScale;
+    const shockEnergy = routeEnergy("shockwave", kick, dt);
+    const stereoEnergy = routeEnergy("stereo", width, dt);
 
     for (let i = 0; i < terrainPositions.count; i++) {
       const x = terrainBase[i * 3], z = terrainBase[i * 3 + 2];
       const waveA = Math.sin(x * 0.42 + t * 0.55) * 0.12;
       const waveB = Math.cos(z * 0.64 - t * 0.34) * 0.09;
       const basin = Math.exp(-(x*x + z*z) * 0.012);
-      terrainPositions.array[i * 3 + 1] = terrainBase[i * 3 + 1] + (waveA + waveB) * (0.35 + lowPulse * 1.8) + basin * lowPulse * 0.22;
+      terrainPositions.array[i * 3 + 1] = terrainBase[i * 3 + 1] + (waveA + waveB) * (0.35 + terrainEnergy * 2.4) + basin * terrainEnergy * 0.34;
     }
     terrainPositions.needsUpdate = true;
     terrainGeometry.computeVertexNormals();
 
     monolith.rotation.y = Math.sin(t * 0.22) * 0.035 + pointerX * 0.025;
     monolith.rotation.x = pointerY * 0.018;
-    innerCore.material.opacity = 0.34 + midPulse * 0.48;
-    keyLight.intensity = 20 + lowPulse * 18 + rms * 10;
+    innerCore.material.opacity = THREE.MathUtils.clamp(0.28 + coreEnergy * 0.55 + shockEnergy * 0.12, 0.2, 0.95);
+    bodyMaterial.emissiveIntensity = 0.28 + coreEnergy * 1.05;
+    keyLight.intensity = 18 + terrainEnergy * 22 + rms * 9 + shockEnergy * 12;
+    rings.scale.setScalar(1 + subEnergy * 0.12);
+    root.scale.x += ((1 + stereoEnergy * 0.16) - root.scale.x) * damping;
+
+    if (shockEnergy > 0.52 && previousKick <= 0.52) {
+      shockwaveAges[shockwaveCursor] = 0;
+      shockwaveCursor = (shockwaveCursor + 1) % shockwaveAges.length;
+    }
+    previousKick = shockEnergy;
+    shockwaveMeshes.forEach((wave, index) => {
+      shockwaveAges[index] += dt;
+      const progress = THREE.MathUtils.clamp(shockwaveAges[index] / 0.72, 0, 1);
+      wave.scale.setScalar(0.8 + progress * 6.1);
+      wave.material.opacity = (1 - progress) * (0.62 + shockEnergy * 0.18);
+    });
 
     bandGroups.forEach(({ mesh, spec }, groupIndex) => {
-      const energy = [lowPulse, midPulse, highPulse][groupIndex];
+      const target = ["bars.low", "bars.mid", "bars.high"][groupIndex];
+      const energy = routeEnergy(target, [lowPulse, midPulse, highPulse][groupIndex], dt) * presetScale;
       const dummy = new THREE.Object3D();
       for (let i = 0; i < spec.count; i++) {
         const angle = (i / spec.count) * Math.PI * 2;
@@ -240,7 +368,9 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
       mesh.instanceMatrix.needsUpdate = true;
     });
 
-    particles.rotation.y = t * 0.008 - pointerX * 0.018;
+    particles.rotation.y = (visualConfig.motion ? t * 0.008 : 0) - pointerX * 0.018;
+    particleMaterial.opacity = THREE.MathUtils.clamp(0.22 + particleEnergy * 0.62 + transient * 0.12, 0.08, 0.9);
+    particleMaterial.size = 0.028 + particleEnergy * 0.045 + transient * 0.018;
     panels.forEach((panel, index) => {
       const d = panelDepth[index];
       panel.style.setProperty("--ps-x", `${(pointerX * 8 * d).toFixed(2)}px`);
