@@ -1039,6 +1039,18 @@ body {
   }
 }
 
+
+/* PS HOVER TRANSFORM COMPOSITION V11.1
+   Override the legacy :hover translateZ so it cannot cancel panel parallax. */
+.hud > .panel:hover {
+  transform:
+    perspective(1500px)
+    translate3d(var(--ps-x),var(--ps-y),var(--ps-z))
+    rotateX(var(--ps-rx))
+    rotateY(var(--ps-ry))
+    scale(1.008);
+}
+
 </style>
 </head>
 <body>
