@@ -327,17 +327,21 @@
       pin.addEventListener("click", () => {
         if (record.placeholder) dockPanel(panel);
         else floatPanel(panel);
+        savePanelLayout();
+        persist();
       });
       lock.addEventListener("click", () => {
         record.locked = !record.locked;
         lock.textContent = record.locked ? "LOCKED" : "UNLOCK";
         grip.style.opacity = record.locked ? "0.3" : "1";
+        savePanelLayout();
         persist();
       });
       fold.addEventListener("click", () => {
         record.collapsed = !record.collapsed;
         panel.classList.toggle("ps-panel-collapsed", record.collapsed);
         fold.textContent = record.collapsed ? "OPEN" : "FOLD";
+        savePanelLayout();
         persist();
       });
       enableDrag(record);
