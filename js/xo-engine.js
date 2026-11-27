@@ -38,6 +38,10 @@ let graphReady = false;
 
 let dryGain, gainLow, gainMid, gainHigh;
 let anaLowL, anaLowR, anaMidL, anaMidR, anaHighL, anaHighR;
+let anaSubL, anaSubR;
+let previousLowEnergy = 0, previousSubEnergy = 0, previousHighEnergy = 0;
+let kickEnvelope = 0, transientEnvelope = 0, lastMetricsTimestamp = 0;
+const analyserBuffers = new WeakMap();
 let listenMode = 'bypass';
 let monoNode = null;
 
@@ -148,10 +152,11 @@ function ensureGraph() {
     f.type = type; f.frequency.value = freq; f.Q.value = Q;
     const g = ctx.createGain(); g.gain.value = 0;
     bus.connect(f); f.connect(g); g.connect(ctx.destination);
+    // Analysis taps sit before the monitor gain. BYPASS and solo gains cannot mute visualization.
     const sp = ctx.createChannelSplitter(2);
-    g.connect(sp);
-    const aL = ctx.createAnalyser(); aL.fftSize = 2048;
-    const aR = ctx.createAnalyser(); aR.fftSize = 2048;
+    f.connect(sp);
+    const aL = ctx.createAnalyser(); aL.fftSize = 2048; aL.smoothingTimeConstant = 0.18;
+    const aR = ctx.createAnalyser(); aR.fftSize = 2048; aR.smoothingTimeConstant = 0.18;
     sp.connect(aL, 0); sp.connect(aR, 1);
     return { filter: f, gain: g, anaL: aL, anaR: aR };
   };
@@ -164,6 +169,19 @@ function ensureGraph() {
 
   const high = mkBand('highpass', 3000, 0.7);
   gainHigh = high.gain; anaHighL = high.anaL; anaHighR = high.anaR;
+
+  // Dedicated sub analysis tap. It has no connection to the audible output.
+  const subFilter = ctx.createBiquadFilter();
+  subFilter.type = 'lowpass';
+  subFilter.frequency.value = 70;
+  subFilter.Q.value = 0.707;
+  const subSplitter = ctx.createChannelSplitter(2);
+  anaSubL = ctx.createAnalyser(); anaSubL.fftSize = 2048; anaSubL.smoothingTimeConstant = 0.18;
+  anaSubR = ctx.createAnalyser(); anaSubR.fftSize = 2048; anaSubR.smoothingTimeConstant = 0.18;
+  bus.connect(subFilter);
+  subFilter.connect(subSplitter);
+  subSplitter.connect(anaSubL, 0);
+  subSplitter.connect(anaSubR, 1);
 
   graphReady = true;
   setListenMode(listenMode);
@@ -383,21 +401,35 @@ function pearson(a, b) {
 
 function isMonoActive() { return monoEnabled || bassMonoEnabled; }
 
-// Read-only RMS tap for the 3D presentation layer. Does not connect or alter audio nodes.
+// Read-only RMS taps with reusable buffers: analysis never changes the audible graph.
 function readAnalyserRms(analyser, rightAnalyser = null) {
   if (!analyser) return 0;
-  const left = new Float32Array(analyser.fftSize);
+  let left = analyserBuffers.get(analyser);
+  if (!left || left.length !== analyser.fftSize) {
+    left = new Float32Array(analyser.fftSize);
+    analyserBuffers.set(analyser, left);
+  }
   analyser.getFloatTimeDomainData(left);
   let sum = 0;
   for (let i = 0; i < left.length; i++) sum += left[i] * left[i];
 
   if (rightAnalyser) {
-    const right = new Float32Array(rightAnalyser.fftSize);
+    let right = analyserBuffers.get(rightAnalyser);
+    if (!right || right.length !== rightAnalyser.fftSize) {
+      right = new Float32Array(rightAnalyser.fftSize);
+      analyserBuffers.set(rightAnalyser, right);
+    }
     rightAnalyser.getFloatTimeDomainData(right);
     for (let i = 0; i < right.length; i++) sum += right[i] * right[i];
     return Math.min(1, Math.sqrt(sum / (left.length + right.length)) * 4);
   }
   return Math.min(1, Math.sqrt(sum / left.length) * 4);
+}
+
+function followEnvelope(current, target, attackSeconds, releaseSeconds, deltaSeconds) {
+  const time = target > current ? attackSeconds : releaseSeconds;
+  const coefficient = 1 - Math.exp(-deltaSeconds / Math.max(0.001, time));
+  return current + (target - current) * coefficient;
 }
 
 function engineLoop(timestamp) {
@@ -484,13 +516,48 @@ function engineLoop(timestamp) {
     document.getElementById('corrHighVal').textContent = pearson(hL, hR).toFixed(2);
   }
 
-  if (updateDom && window.PSScene3D?.setAudioMetrics) {
-    window.PSScene3D.setAudioMetrics({
-      low: readAnalyserRms(anaLowL, anaLowR),
-      mid: readAnalyserRms(anaMidL, anaMidR),
-      high: readAnalyserRms(anaHighL, anaHighR),
-      rms: readAnalyserRms(anaMain)
-    });
+  if (window.PSScene3D?.setAudioMetrics && anaMain) {
+    const deltaSeconds = lastMetricsTimestamp
+      ? Math.min(0.05, Math.max(0.001, (timestamp - lastMetricsTimestamp) / 1000))
+      : 1 / 60;
+    lastMetricsTimestamp = timestamp;
+
+    const lowEnergy = readAnalyserRms(anaLowL, anaLowR);
+    const subEnergy = readAnalyserRms(anaSubL, anaSubR);
+    const midEnergy = readAnalyserRms(anaMidL, anaMidR);
+    const highEnergy = readAnalyserRms(anaHighL, anaHighR);
+    const masterEnergy = readAnalyserRms(anaMain);
+
+    // Onset follows positive low/high energy changes, not the sustained bass envelope.
+    const kickAttack = Math.min(1, Math.max(0,
+      (lowEnergy - previousLowEnergy) * 11 +
+      (subEnergy - previousSubEnergy) * 13
+    ));
+    const highAttack = Math.min(1, Math.max(0,
+      (highEnergy - previousHighEnergy) * 14
+    ));
+    kickEnvelope = followEnvelope(kickEnvelope, kickAttack, 0.012, 0.16, deltaSeconds);
+    transientEnvelope = followEnvelope(transientEnvelope, highAttack, 0.008, 0.095, deltaSeconds);
+    previousLowEnergy = lowEnergy;
+    previousSubEnergy = subEnergy;
+    previousHighEnergy = highEnergy;
+
+    const stereoWidth = Math.max(0, Math.min(1, (1 - corrSmooth) * 0.5));
+    const audioMetrics = {
+      low: lowEnergy,
+      sub: subEnergy,
+      bass: lowEnergy,
+      mid: midEnergy,
+      high: highEnergy,
+      rms: masterEnergy,
+      kick: kickEnvelope,
+      transient: transientEnvelope,
+      width: stereoWidth
+    };
+    window.PSScene3D.setAudioMetrics(audioMetrics);
+    if (updateDom) {
+      window.dispatchEvent(new CustomEvent('ps-audio-metrics', { detail: audioMetrics }));
+    }
   }
 
   if (updateDom) {
