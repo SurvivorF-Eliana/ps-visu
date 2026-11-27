@@ -173,27 +173,40 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
   let kick = 0, transient = 0, width = 0;
   let hasAudioMetrics = false;
   const defaultRoutes = [
-    { source: "kick", target: "shockwave", amount: 1.0, threshold: 0.04, enabled: true },
-    { source: "sub", target: "rings", amount: 0.9, threshold: 0.02, enabled: true },
-    { source: "bass", target: "terrain", amount: 1.0, threshold: 0.02, enabled: true },
-    { source: "mid", target: "core", amount: 0.9, threshold: 0.02, enabled: true },
-    { source: "high", target: "particles", amount: 1.0, threshold: 0.02, enabled: true },
-    { source: "low", target: "bars.low", amount: 1.0, threshold: 0.01, enabled: true },
-    { source: "mid", target: "bars.mid", amount: 1.0, threshold: 0.01, enabled: true },
-    { source: "high", target: "bars.high", amount: 1.0, threshold: 0.01, enabled: true },
-    { source: "width", target: "stereo", amount: 0.8, threshold: 0.02, enabled: true },
-    { source: "kick", target: "camera", amount: 0.35, threshold: 0.08, enabled: true }
+    { id: "r-kick-wave", source: "kick", target: "shockwave", amount: 1.0, threshold: 0.04, attack: 0.008, release: 0.16, curve: "linear", invert: false, enabled: true },
+    { id: "r-sub-rings", source: "sub", target: "rings", amount: 0.9, threshold: 0.02, attack: 0.025, release: 0.24, curve: "expo", invert: false, enabled: true },
+    { id: "r-bass-ground", source: "bass", target: "terrain", amount: 1.0, threshold: 0.02, attack: 0.06, release: 0.3, curve: "linear", invert: false, enabled: true },
+    { id: "r-mid-core", source: "mid", target: "core", amount: 0.9, threshold: 0.02, attack: 0.04, release: 0.2, curve: "linear", invert: false, enabled: true },
+    { id: "r-high-particles", source: "high", target: "particles", amount: 1.0, threshold: 0.02, attack: 0.008, release: 0.11, curve: "log", invert: false, enabled: true },
+    { id: "r-low-bars", source: "low", target: "bars.low", amount: 1.0, threshold: 0.01, attack: 0.025, release: 0.15, curve: "linear", invert: false, enabled: true },
+    { id: "r-mid-bars", source: "mid", target: "bars.mid", amount: 1.0, threshold: 0.01, attack: 0.03, release: 0.16, curve: "linear", invert: false, enabled: true },
+    { id: "r-high-bars", source: "high", target: "bars.high", amount: 1.0, threshold: 0.01, attack: 0.01, release: 0.1, curve: "log", invert: false, enabled: true },
+    { id: "r-width-spread", source: "width", target: "stereo", amount: 0.8, threshold: 0.02, attack: 0.12, release: 0.35, curve: "linear", invert: false, enabled: true },
+    { id: "r-kick-camera", source: "kick", target: "camera", amount: 0.35, threshold: 0.08, attack: 0.006, release: 0.1, curve: "expo", invert: false, enabled: true }
   ];
   const visualConfig = { preset: "OBSERVATORY", motion: !reducedMotion, routes: defaultRoutes.map(route => ({ ...route })) };
   const audioMetrics = { low: 0, sub: 0, bass: 0, mid: 0, high: 0, rms: 0, kick: 0, transient: 0, width: 0 };
+  const routeMemory = new Map();
   const clamp01 = value => THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
-  function routeEnergy(target, fallback) {
-    const routes = visualConfig.routes.filter(route => route.enabled !== false && route.target === target);
-    if (!routes.length) return clamp01(fallback);
-    const energy = routes.reduce((sum, route) => {
+  function routeEnergy(target, fallback, deltaSeconds = 1 / 60) {
+    const configured = visualConfig.routes.filter(route => route.target === target);
+    if (!configured.length) return clamp01(fallback);
+    const active = configured.filter(route => route.enabled !== false);
+    if (!active.length) return 0;
+    const energy = active.reduce((sum, route, index) => {
       const input = clamp01(audioMetrics[route.source]);
       const threshold = clamp01(route.threshold);
-      return sum + Math.max(0, input - threshold) * Math.max(0, Number(route.amount) || 0);
+      let raw = THREE.MathUtils.clamp((input - threshold) / Math.max(0.001, 1 - threshold), 0, 1);
+      if (route.invert) raw = 1 - raw;
+      if (route.curve === "expo") raw *= raw;
+      else if (route.curve === "log") raw = Math.log1p(raw * 9) / Math.log(10);
+      const key = String(route.id || (route.source + ":" + route.target + ":" + index));
+      const previous = routeMemory.get(key) || 0;
+      const time = raw > previous ? route.attack : route.release;
+      const coefficient = 1 - Math.exp(-deltaSeconds / Math.max(0.005, Number(time) || 0.02));
+      const current = previous + (raw - previous) * coefficient;
+      routeMemory.set(key, current);
+      return sum + current * Math.max(0, Number(route.amount) || 0);
     }, 0);
     return clamp01(energy);
   }
@@ -221,13 +234,19 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
     if (["OBSERVATORY", "MACHINE", "SIGNAL", "VOID"].includes(next.preset)) visualConfig.preset = next.preset;
     if (typeof next.motion === "boolean") visualConfig.motion = next.motion;
     if (Array.isArray(next.routes)) {
-      visualConfig.routes = next.routes.slice(0, 32).map(route => ({
+      visualConfig.routes = next.routes.slice(0, 32).map((route, index) => ({
+        id: String(route.id || ("route-" + index)),
         source: String(route.source || "rms"),
         target: String(route.target || "core"),
         amount: THREE.MathUtils.clamp(Number(route.amount) || 0, 0, 2),
         threshold: clamp01(route.threshold),
+        attack: THREE.MathUtils.clamp(Number(route.attack) || 0.02, 0.005, 1),
+        release: THREE.MathUtils.clamp(Number(route.release) || 0.15, 0.005, 2),
+        curve: ["linear", "expo", "log"].includes(route.curve) ? route.curve : "linear",
+        invert: route.invert === true,
         enabled: route.enabled !== false
       }));
+      routeMemory.clear();
     }
     if (visualConfig.motion && running && !raf) raf = requestAnimationFrame(render);
     if (!visualConfig.motion && reducedMotion && raf) {
@@ -283,7 +302,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
 
     camera.position.x += (pointerX * 0.72 - camera.position.x) * damping;
     camera.position.y += (4.2 + pointerY * 0.48 - camera.position.y) * damping;
-    const cameraEnergy = routeEnergy("camera", kick);
+    const cameraEnergy = routeEnergy("camera", kick, dt);
     camera.position.z += (19 - cameraEnergy * 0.16 - camera.position.z) * damping;
     camera.lookAt(pointerX * 0.22, pointerY * 0.12, -0.8);
     root.rotation.y += (pointerX * 0.035 - root.rotation.y) * damping;
@@ -295,12 +314,12 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
     const presetScale = visualConfig.preset === "MACHINE" ? 1.22
       : visualConfig.preset === "SIGNAL" ? 1.1
       : visualConfig.preset === "VOID" ? 0.48 : 1;
-    const terrainEnergy = routeEnergy("terrain", lowPulse) * presetScale;
-    const coreEnergy = routeEnergy("core", midPulse) * presetScale;
-    const subEnergy = routeEnergy("rings", sub) * presetScale;
-    const particleEnergy = routeEnergy("particles", highPulse) * presetScale;
-    const shockEnergy = routeEnergy("shockwave", kick);
-    const stereoEnergy = routeEnergy("stereo", width);
+    const terrainEnergy = routeEnergy("terrain", lowPulse, dt) * presetScale;
+    const coreEnergy = routeEnergy("core", midPulse, dt) * presetScale;
+    const subEnergy = routeEnergy("rings", sub, dt) * presetScale;
+    const particleEnergy = routeEnergy("particles", highPulse, dt) * presetScale;
+    const shockEnergy = routeEnergy("shockwave", kick, dt);
+    const stereoEnergy = routeEnergy("stereo", width, dt);
 
     for (let i = 0; i < terrainPositions.count; i++) {
       const x = terrainBase[i * 3], z = terrainBase[i * 3 + 2];
@@ -334,7 +353,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
 
     bandGroups.forEach(({ mesh, spec }, groupIndex) => {
       const target = ["bars.low", "bars.mid", "bars.high"][groupIndex];
-      const energy = routeEnergy(target, [lowPulse, midPulse, highPulse][groupIndex]) * presetScale;
+      const energy = routeEnergy(target, [lowPulse, midPulse, highPulse][groupIndex], dt) * presetScale;
       const dummy = new THREE.Object3D();
       for (let i = 0; i < spec.count; i++) {
         const angle = (i / spec.count) * Math.PI * 2;
