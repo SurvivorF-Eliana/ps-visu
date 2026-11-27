@@ -935,10 +935,114 @@ body {
   .footer { zoom: .9; }
 }
 
+
+/* PS THREE SCENE V11 — REAL BACKGROUND CANVAS + INTERACTIVE HTML PANELS */
+body {
+  position: relative;
+  isolation: isolate;
+  overflow-x: clip;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(var(--accent-rgb),.07), transparent 62%),
+    linear-gradient(180deg,#050b0f 0%,#020405 58%,#010203 100%);
+}
+.ps-scene-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none !important;
+  opacity: .92;
+}
+.hud,
+.footer {
+  position: relative;
+  z-index: 2;
+}
+.hud {
+  transform: none !important;
+  transform-style: flat;
+  perspective: none;
+}
+.hud > .panel {
+  --ps-x: 0px;
+  --ps-y: 0px;
+  --ps-z: 0px;
+  --ps-rx: 0deg;
+  --ps-ry: 0deg;
+  --ps-scale: 1;
+  transform:
+    perspective(1500px)
+    translate3d(var(--ps-x),var(--ps-y),var(--ps-z))
+    rotateX(var(--ps-rx))
+    rotateY(var(--ps-ry))
+    scale(var(--ps-scale));
+  transform-origin: 50% 50%;
+  transition:
+    transform 180ms cubic-bezier(.2,.75,.25,1),
+    filter 180ms ease,
+    opacity 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.hud.is-focusing > .panel:not(.is-focused) {
+  transform:
+    perspective(1500px)
+    translate3d(var(--ps-x),var(--ps-y),var(--ps-z))
+    rotateX(var(--ps-rx))
+    rotateY(var(--ps-ry))
+    scale(.992);
+  filter: blur(1.15px) brightness(.72) saturate(.82);
+  opacity: .78;
+}
+.hud.is-focusing > .panel.is-focused {
+  position: relative;
+  z-index: 30;
+  transform:
+    perspective(1500px)
+    translate3d(var(--ps-x),calc(var(--ps-y) - 7px),calc(var(--ps-z) + 22px))
+    rotateX(var(--ps-rx))
+    rotateY(var(--ps-ry))
+    scale(1.018);
+  filter: brightness(1.08) saturate(1.05);
+  opacity: 1;
+  border-color: rgba(var(--accent-rgb),.98);
+  box-shadow:
+    0 28px 60px rgba(0,0,0,.68),
+    0 0 0 1px rgba(var(--accent-rgb),.30),
+    0 0 30px rgba(var(--accent-rgb),.12),
+    0 1px 0 rgba(255,255,255,.14) inset;
+}
+.hud.is-focusing > .panel.is-focused::before { opacity: 1; }
+@media (max-width: 1100px) {
+  .hud > .panel,
+  .hud.is-focusing > .panel:not(.is-focused),
+  .hud.is-focusing > .panel.is-focused {
+    transform: none !important;
+    filter: none;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ps-scene-canvas { display: none; }
+  .hud > .panel,
+  .hud.is-focusing > .panel:not(.is-focused),
+  .hud.is-focusing > .panel.is-focused {
+    transform: none !important;
+    transition: none !important;
+    filter: none;
+    opacity: 1;
+    will-change: auto;
+  }
+}
+
 </style>
 </head>
 <body>
-<div class="page-parallax-mask" aria-hidden="true"></div>
+<canvas id="psSceneCanvas" class="ps-scene-canvas" aria-hidden="true"></canvas>
 
 <div class="hud">
   <header class="panel p-header">
@@ -1073,82 +1177,7 @@ body {
 </div>
 
 
-<script>
-(() => {
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const finePointer = window.matchMedia("(pointer: fine)").matches;
-  const hud = document.querySelector(".hud");
-  const mask = document.querySelector(".page-parallax-mask");
-  if (!finePointer || !hud || !mask || reduceMotion) return;
 
-  const panels = [...hud.querySelectorAll(":scope > .panel")];
-  // Cada módulo tiene una profundidad distinta, pero TODOS reciben movimiento.
-  const depth = new Map(panels.map((panel, index) => [panel, [0.58, 0.88, 1.02, 1.08, 1.18, 1.28][index] || 1]));
-  let activePanel = null;
-  let rafId = 0;
-  let nx = 0, ny = 0;
-
-  const resetPanel = () => {
-    if (!activePanel) return;
-    activePanel.classList.remove("is-focused");
-    activePanel.style.setProperty("--glow-x", "50%");
-    activePanel.style.setProperty("--glow-y", "50%");
-    activePanel = null;
-    hud.classList.remove("is-focusing");
-  };
-
-  const render = () => {
-    rafId = 0;
-    const x = nx, y = ny;
-
-    // Fondo y máscara: se desplazan en sentido contrario.
-    mask.style.setProperty("--mask-x", `${(-x * 30).toFixed(2)}px`);
-    mask.style.setProperty("--mask-y", `${(-y * 22).toFixed(2)}px`);
-    mask.style.setProperty("--light-x", `${(50 - x * 13).toFixed(1)}%`);
-    mask.style.setProperty("--light-y", `${(8 - y * 9).toFixed(1)}%`);
-    mask.style.setProperty("--ca-x", `${(x * 2.2).toFixed(2)}px`);
-    mask.style.setProperty("--ca-y", `${(y * 1.6).toFixed(2)}px`);
-
-    // Movimiento individual de TODOS los paneles, con profundidad por módulo.
-    for (const panel of panels) {
-      const d = depth.get(panel);
-      panel.style.setProperty("--panel-x", `${(x * 13 * d).toFixed(2)}px`);
-      panel.style.setProperty("--panel-y", `${(y * 9 * d).toFixed(2)}px`);
-      panel.style.setProperty("--panel-rx", `${(y * -1.15 * d).toFixed(2)}deg`);
-      panel.style.setProperty("--panel-ry", `${(x * 1.45 * d).toFixed(2)}deg`);
-    }
-  };
-
-  document.addEventListener("pointermove", (event) => {
-    if (event.pointerType === "touch") return;
-    nx = (event.clientX / Math.max(1, window.innerWidth) - .5) * 2;
-    ny = (event.clientY / Math.max(1, window.innerHeight) - .5) * 2;
-
-    const panel = event.target.closest(".hud > .panel");
-    if (panel && panel.parentElement === hud) {
-      if (panel !== activePanel) {
-        resetPanel();
-        activePanel = panel;
-        activePanel.classList.add("is-focused");
-        hud.classList.add("is-focusing");
-      }
-      const r = activePanel.getBoundingClientRect();
-      activePanel.style.setProperty("--glow-x", `${(((event.clientX-r.left)/r.width)*100).toFixed(1)}%`);
-      activePanel.style.setProperty("--glow-y", `${(((event.clientY-r.top)/r.height)*100).toFixed(1)}%`);
-    } else {
-      resetPanel();
-    }
-    if (!rafId) rafId = requestAnimationFrame(render);
-  }, { passive: true });
-
-  document.addEventListener("pointerleave", () => {
-    nx = 0; ny = 0;
-    resetPanel();
-    if (!rafId) rafId = requestAnimationFrame(render);
-  });
-  window.addEventListener("blur", resetPanel);
-})();
-</script>
 
 
 <script>
@@ -1185,6 +1214,231 @@ body {
 })();
 </script>
 
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+
+(() => {
+  const canvas = document.getElementById("psSceneCanvas");
+  const hud = document.querySelector(".hud");
+  if (!canvas || !hud) return;
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const finePointer = window.matchMedia("(pointer: fine)").matches;
+  if (reduceMotion) return;
+
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: false,
+      powerPreference: "low-power"
+    });
+  } catch (error) {
+    console.warn("[PS Scene] WebGL unavailable; using CSS fallback.", error);
+    canvas.style.display = "none";
+    return;
+  }
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+  camera.position.z = 2;
+
+  const uniforms = {
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+    uPointer: { value: new THREE.Vector2(0, 0) },
+    uAccent: { value: new THREE.Color("#d6ff00") },
+    uTime: { value: 0 },
+    uChromatic: { value: 0.00115 }
+  };
+
+  const backgroundMaterial = new THREE.ShaderMaterial({
+    uniforms,
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec2 vUv;
+      uniform vec2 uResolution;
+      uniform vec2 uPointer;
+      uniform vec3 uAccent;
+      uniform float uTime;
+      uniform float uChromatic;
+
+      float gridLine(vec2 uv, float scale, float width) {
+        vec2 g = abs(fract(uv * scale - 0.5) - 0.5);
+        vec2 line = 1.0 - smoothstep(vec2(0.0), vec2(width), g);
+        return max(line.x, line.y);
+      }
+
+      void main() {
+        vec2 uv = vUv;
+        vec2 aspect = vec2(uResolution.x / max(uResolution.y, 1.0), 1.0);
+        vec2 p = (uv - 0.5) * aspect;
+        vec2 pointer = uPointer * aspect * 0.5;
+        vec2 delta = p + pointer * 0.10;
+
+        float glow = exp(-dot(delta * vec2(1.0, 1.45), delta * vec2(1.0, 1.45)) * 5.2);
+        float secondary = exp(-dot((p - vec2(0.28,-0.18)), (p - vec2(0.28,-0.18))) * 8.0);
+        float grid = gridLine(uv, 34.0, 0.012);
+        float fineGrid = gridLine(uv, 136.0, 0.006);
+
+        float chromaR = gridLine(uv + vec2(uChromatic, 0.0), 34.0, 0.012);
+        float chromaB = gridLine(uv - vec2(uChromatic, 0.0), 34.0, 0.012);
+        vec3 chromaGrid = vec3(chromaR, grid, chromaB);
+
+        vec3 base = vec3(0.003, 0.008, 0.011);
+        vec3 color = base;
+        color += uAccent * glow * 0.19;
+        color += vec3(0.12, 0.24, 0.28) * secondary * 0.12;
+        color += chromaGrid * vec3(0.035, 0.11, 0.13);
+        color += vec3(0.12, 0.19, 0.22) * fineGrid * 0.022;
+
+        float vignette = smoothstep(1.18, 0.18, length(p * vec2(0.72, 0.88)));
+        color *= 0.72 + vignette * 0.28;
+
+        gl_FragColor = vec4(color, 0.84);
+      }
+    `
+  });
+
+  const background = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), backgroundMaterial);
+  scene.add(background);
+
+  // Polvo técnico muy tenue para reforzar la profundidad sin competir con el HUD.
+  const particleCount = 110;
+  const particlePositions = new Float32Array(particleCount * 3);
+  for (let i = 0; i < particleCount; i++) {
+    particlePositions[i * 3] = (Math.random() - 0.5) * 2.15;
+    particlePositions[i * 3 + 1] = (Math.random() - 0.5) * 2.15;
+    particlePositions[i * 3 + 2] = 0.12;
+  }
+  const particleGeometry = new THREE.BufferGeometry();
+  particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
+  const particleMaterial = new THREE.PointsMaterial({
+    color: 0xb9d7dc,
+    size: 1.25,
+    sizeAttenuation: false,
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false
+  });
+  const particles = new THREE.Points(particleGeometry, particleMaterial);
+  scene.add(particles);
+
+  const panels = [...hud.querySelectorAll(":scope > .panel")];
+  const depths = [0.58, 0.86, 1.0, 1.08, 1.18, 1.28];
+  const depth = new Map(panels.map((panel, index) => [panel, depths[index] || 1]));
+  let activePanel = null;
+  let pointerX = 0;
+  let pointerY = 0;
+  let targetX = 0;
+  let targetY = 0;
+  let rafId = 0;
+  let running = true;
+  const clock = new THREE.Clock();
+
+  const parseAccent = () => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    if (value) uniforms.uAccent.value.set(value);
+  };
+  parseAccent();
+
+  const resetPanel = () => {
+    if (!activePanel) return;
+    activePanel.classList.remove("is-focused");
+    activePanel.style.setProperty("--glow-x", "50%");
+    activePanel.style.setProperty("--glow-y", "50%");
+    activePanel = null;
+    hud.classList.remove("is-focusing");
+  };
+
+  const render = () => {
+    rafId = 0;
+    if (!running) return;
+
+    pointerX += (targetX - pointerX) * 0.085;
+    pointerY += (targetY - pointerY) * 0.085;
+
+    uniforms.uPointer.value.set(pointerX, pointerY);
+    uniforms.uTime.value = clock.getElapsedTime();
+
+    // Cada panel HTML se desplaza de forma independiente, con profundidad por módulo.
+    for (const panel of panels) {
+      const d = depth.get(panel);
+      panel.style.setProperty("--ps-x", `${(pointerX * 11 * d).toFixed(2)}px`);
+      panel.style.setProperty("--ps-y", `${(pointerY * 8 * d).toFixed(2)}px`);
+      panel.style.setProperty("--ps-rx", `${(pointerY * -0.9 * d).toFixed(2)}deg`);
+      panel.style.setProperty("--ps-ry", `${(pointerX * 1.2 * d).toFixed(2)}deg`);
+      panel.style.setProperty("--ps-z", `${(d * 5).toFixed(1)}px`);
+    }
+
+    renderer.render(scene, camera);
+    rafId = requestAnimationFrame(render);
+  };
+
+  const onPointerMove = (event) => {
+    if (!finePointer || event.pointerType === "touch") return;
+    targetX = (event.clientX / Math.max(1, window.innerWidth) - 0.5) * 2;
+    targetY = (event.clientY / Math.max(1, window.innerHeight) - 0.5) * -2;
+
+    const panel = event.target.closest(".hud > .panel");
+    if (panel && panel.parentElement === hud) {
+      if (panel !== activePanel) {
+        resetPanel();
+        activePanel = panel;
+        activePanel.classList.add("is-focused");
+        hud.classList.add("is-focusing");
+      }
+      const rect = activePanel.getBoundingClientRect();
+      activePanel.style.setProperty("--glow-x", `${(((event.clientX - rect.left) / rect.width) * 100).toFixed(1)}%`);
+      activePanel.style.setProperty("--glow-y", `${(((event.clientY - rect.top) / rect.height) * 100).toFixed(1)}%`);
+    } else {
+      resetPanel();
+    }
+  };
+
+  const onResize = () => {
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+  };
+
+  const onAccentChange = () => parseAccent();
+  document.addEventListener("pointermove", onPointerMove, { passive: true });
+  document.addEventListener("pointerleave", () => {
+    targetX = 0;
+    targetY = 0;
+    resetPanel();
+  });
+  window.addEventListener("resize", onResize);
+  window.addEventListener("blur", resetPanel);
+  document.getElementById("accentPicker")?.addEventListener("input", onAccentChange);
+  document.getElementById("accentHex")?.addEventListener("change", onAccentChange);
+
+  // Si la pestaña queda oculta, detener el loop y reanudar al volver.
+  document.addEventListener("visibilitychange", () => {
+    running = !document.hidden;
+    if (running && !rafId) rafId = requestAnimationFrame(render);
+    if (!running && rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+  });
+
+  rafId = requestAnimationFrame(render);
+})();
+</script>
 <script src="js/xo-engine.js"></script>
 </body>
 </html>
