@@ -328,13 +328,136 @@ button:focus-visible, input:focus-visible, label:focus-visible {
   .hud > .panel, .hud > .panel:hover { transform: none !important; }
 }
 
+
+/* PS ANGULAR HUD SKIN */
+:root {
+  --frame-line: rgba(var(--accent-rgb), .88);
+  --frame-soft: rgba(var(--accent-rgb), .22);
+  --frame-fill: rgba(var(--accent-rgb), .045);
+}
+body {
+  background-color: #03070a;
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(var(--accent-rgb), .105), transparent 54%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(var(--accent-rgb), .055) 32px),
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(var(--accent-rgb), .055) 32px),
+    linear-gradient(180deg, #061014 0%, #020405 100%);
+  background-attachment: fixed;
+}
+.hud { gap: 14px; }
+.hud > .panel {
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(145deg, rgba(5,18,23,.94), rgba(3,8,12,.94));
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb),.09), 0 14px 36px rgba(0,0,0,.48);
+  clip-path: polygon(0 18px, 18px 0, calc(100% - 30px) 0, 100% 30px, 100% calc(100% - 17px), calc(100% - 17px) 100%, 18px 100%, 0 calc(100% - 18px));
+  overflow: hidden;
+}
+.hud > .panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  padding: 1.5px;
+  background: linear-gradient(135deg, var(--frame-line), var(--frame-soft) 38%, rgba(var(--accent-rgb),.62) 78%, var(--frame-line));
+  clip-path: inherit;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.hud > .panel::before {
+  inset: 0;
+  opacity: .72;
+  background:
+    radial-gradient(380px circle at var(--glow-x,50%) var(--glow-y,50%), rgba(var(--accent-rgb),.13), transparent 70%),
+    linear-gradient(135deg, var(--frame-fill), transparent 58%);
+}
+.hud > .panel:hover {
+  border-color: transparent;
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb),.22), 0 18px 46px rgba(0,0,0,.58), 0 0 28px rgba(var(--accent-rgb),.12);
+}
+.hud-title {
+  color: var(--accent);
+  border-bottom-color: var(--frame-soft);
+  letter-spacing: 1.8px;
+}
+.hud-title::before {
+  content: "// ";
+  color: var(--txt-dim);
+}
+.xo-band, .canvas-wrap, .playlist, .metric, .readout {
+  border-radius: 0;
+  border-color: var(--frame-soft);
+  background-color: rgba(0,8,12,.58);
+  clip-path: polygon(0 10px, 10px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 10px 100%, 0 calc(100% - 10px));
+}
+.xo-band {
+  position: relative;
+  border: 1px solid var(--frame-soft);
+  background: linear-gradient(145deg, rgba(var(--accent-rgb),.075), rgba(0,0,0,.34) 65%);
+}
+.xo-band h3 { color: var(--accent); }
+.canvas-wrap { border: 1px solid var(--frame-soft); }
+.metric { border: 1px solid rgba(var(--accent-rgb),.14); }
+.data-bar { border-color: var(--frame-soft); }
+.btn, .tab {
+  border-radius: 0;
+  border-color: var(--frame-soft);
+  clip-path: polygon(0 6px, 6px 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
+}
+.btn:hover, .tab.active { border-color: var(--accent); }
+.color-metric { align-items: center; gap: 10px; }
+.color-control { display: flex; align-items: center; gap: 8px; }
+.color-control input[type=color] {
+  width: 38px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--frame-line);
+  background: #020608;
+  border-radius: 0;
+  cursor: pointer;
+}
+.color-control input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+.color-control input[type=color]::-webkit-color-swatch { border: 0; border-radius: 0; }
+.color-control input[type=text] {
+  width: 88px;
+  min-height: 32px;
+  padding: 5px 8px;
+  color: var(--accent);
+  background: #020608;
+  border: 1px solid var(--frame-soft);
+  border-radius: 0;
+  font: 600 12px/1 var(--font);
+  letter-spacing: .8px;
+  text-transform: uppercase;
+}
+.color-control input[type=text]:focus { border-color: var(--accent); outline: 1px solid var(--accent); }
+.footer { margin-top: 8px; padding: 12px 0 4px; }
+.footer-logo {
+  display: block;
+  width: 54px;
+  height: 54px;
+  margin-top: 12px;
+  object-fit: contain;
+  mix-blend-mode: screen;
+  filter: grayscale(1) brightness(1.3) contrast(1.1);
+  opacity: .82;
+  -webkit-mask-image: radial-gradient(circle, #000 38%, transparent 76%);
+  mask-image: radial-gradient(circle, #000 38%, transparent 76%);
+}
+@media (max-width: 700px) {
+  .hud { gap: 10px; }
+  .hud > .panel { clip-path: polygon(0 13px, 13px 0, calc(100% - 22px) 0, 100% 22px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 13px 100%, 0 calc(100% - 13px)); }
+  .color-metric { align-items: flex-start; flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud > .panel, .hud > .panel:hover { transition: none !important; }
+}
+
 </style>
 </head>
 <body>
-
-<div class="top-logo">
-  <img src="https://i1.sndcdn.com/avatars-iRq2ZXOqfzBsgaO1-pEbIHg-t200x200.jpg" alt="Proper Sequences" width="72" height="72" fetchpriority="high" decoding="async">
-</div>
 
 <div class="hud">
   <header class="panel p-header">
@@ -444,7 +567,13 @@ button:focus-visible, input:focus-visible, label:focus-visible {
     </div>
     <div class="queue-right">
       <div class="metric"><span class="k">CENTROID</span><span class="v" id="centroidVal">-- HZ</span></div>
-      <div class="metric"><label class="k" for="accentPicker">UI_GLOW</label><input type="color" id="accentPicker" value="#d6ff00" aria-label="Color de acento de la interfaz"></div>
+      <div class="metric color-metric">
+        <label class="k" for="accentPicker">UI_ACCENT / HEX</label>
+        <div class="color-control">
+          <input type="color" id="accentPicker" value="#d6ff00" aria-label="Elegir cualquier color de acento">
+          <input type="text" id="accentHex" value="#D6FF00" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Código hexadecimal del color de acento" pattern="^#[0-9A-Fa-f]{6}$">
+        </div>
+      </div>
       <div class="metric"><label class="k" for="volSlider">VOLUME</label><input type="range" id="volSlider" min="0" max="1" step="0.01" value="0.8" aria-label="Volumen de reproducción"></div>
       <div class="mono-box">
         <button class="btn" id="monoBtn">MONO</button>
@@ -459,6 +588,7 @@ button:focus-visible, input:focus-visible, label:focus-visible {
 <div class="footer">
   <span class="ft">PROPER MASTERING | 2026</span>
   <span>TOOLS FOR ELECTRONIC MUSIC PRODUCERS — XO.3BAND</span>
+  <img class="footer-logo" src="https://i1.sndcdn.com/avatars-iRq2ZXOqfzBsgaO1-pEbIHg-t200x200.jpg" alt="Proper Sequences" width="54" height="54" loading="lazy" decoding="async">
 </div>
 
 
@@ -522,6 +652,41 @@ button:focus-visible, input:focus-visible, label:focus-visible {
     }
     if (!rafId) rafId = requestAnimationFrame(render);
   }, { passive: true });
+})();
+</script>
+
+
+<script>
+(() => {
+  const picker = document.getElementById("accentPicker");
+  const hexInput = document.getElementById("accentHex");
+  if (!picker || !hexInput) return;
+
+  const normalizeHex = value => /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim().toLowerCase() : null;
+
+  picker.addEventListener("input", () => {
+    hexInput.value = picker.value.toUpperCase();
+  });
+
+  hexInput.addEventListener("input", () => {
+    const hex = normalizeHex(hexInput.value);
+    hexInput.setCustomValidity(hex ? "" : "Usá un color HEX válido, por ejemplo #D6FF00");
+    if (hex) {
+      picker.value = hex;
+      picker.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+
+  hexInput.addEventListener("change", () => {
+    const hex = normalizeHex(hexInput.value);
+    if (!hex) {
+      hexInput.value = picker.value.toUpperCase();
+      hexInput.setCustomValidity("");
+      return;
+    }
+    hexInput.value = hex.toUpperCase();
+    hexInput.setCustomValidity("");
+  });
 })();
 </script>
 
