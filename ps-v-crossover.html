@@ -786,6 +786,68 @@ body {
   .hud { transition: none !important; transform: none !important; will-change: auto; }
 }
 
+
+/* PS ALL PANELS PARALLAX V8 */
+.hud {
+  transform: none !important;
+  perspective: 1500px;
+  transform-style: preserve-3d;
+}
+.hud > .panel {
+  --panel-x: 0px;
+  --panel-y: 0px;
+  --panel-rx: 0deg;
+  --panel-ry: 0deg;
+  --panel-lift: 0px;
+  --panel-scale: 1;
+  transform:
+    perspective(1200px)
+    translate3d(var(--panel-x), calc(var(--panel-y) - var(--panel-lift)), var(--panel-z, 0px))
+    rotateX(var(--panel-rx))
+    rotateY(var(--panel-ry))
+    scale(var(--panel-scale));
+  transform-origin: 50% 50%;
+  transition:
+    transform 180ms cubic-bezier(.2,.75,.25,1),
+    filter 180ms ease,
+    opacity 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+  will-change: transform;
+}
+.hud.is-focusing > .panel:not(.is-focused) {
+  filter: blur(1.3px) brightness(.72) saturate(.8);
+  opacity: .78;
+  --panel-scale: .992;
+}
+.hud.is-focusing > .panel.is-focused {
+  --panel-lift: 9px;
+  --panel-z: 28px;
+  --panel-scale: 1.018;
+  z-index: 20;
+  filter: brightness(1.08) saturate(1.05);
+  opacity: 1;
+  border-color: rgba(var(--accent-rgb),.98);
+  box-shadow:
+    0 26px 52px rgba(0,0,0,.64),
+    0 0 0 1px rgba(var(--accent-rgb),.30),
+    0 0 28px rgba(var(--accent-rgb),.12),
+    0 1px 0 rgba(255,255,255,.14) inset;
+}
+@media (max-width: 1100px) {
+  .hud > .panel {
+    transform: none !important;
+    will-change: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud > .panel {
+    transform: none !important;
+    transition: none !important;
+    will-change: auto;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -932,6 +994,9 @@ body {
   const mask = document.querySelector(".page-parallax-mask");
   if (!finePointer || !hud || !mask || reduceMotion) return;
 
+  const panels = [...hud.querySelectorAll(":scope > .panel")];
+  // Cada módulo tiene una profundidad distinta, pero TODOS reciben movimiento.
+  const depth = new Map(panels.map((panel, index) => [panel, [0.58, 0.88, 1.02, 1.08, 1.18, 1.28][index] || 1]));
   let activePanel = null;
   let rafId = 0;
   let nx = 0, ny = 0;
@@ -948,15 +1013,23 @@ body {
   const render = () => {
     rafId = 0;
     const x = nx, y = ny;
-    // La máscara se mueve más que el HUD y en sentido contrario: efecto de profundidad por capas.
+
+    // Fondo y máscara: se desplazan en sentido contrario.
     mask.style.setProperty("--mask-x", `${(-x * 30).toFixed(2)}px`);
     mask.style.setProperty("--mask-y", `${(-y * 22).toFixed(2)}px`);
     mask.style.setProperty("--light-x", `${(50 - x * 13).toFixed(1)}%`);
     mask.style.setProperty("--light-y", `${(8 - y * 9).toFixed(1)}%`);
     mask.style.setProperty("--ca-x", `${(x * 2.2).toFixed(2)}px`);
     mask.style.setProperty("--ca-y", `${(y * 1.6).toFixed(2)}px`);
-    hud.style.setProperty("--hud-rx", `${(y * -1.7).toFixed(2)}deg`);
-    hud.style.setProperty("--hud-ry", `${(x * 2.2).toFixed(2)}deg`);
+
+    // Movimiento individual de TODOS los paneles, con profundidad por módulo.
+    for (const panel of panels) {
+      const d = depth.get(panel);
+      panel.style.setProperty("--panel-x", `${(x * 13 * d).toFixed(2)}px`);
+      panel.style.setProperty("--panel-y", `${(y * 9 * d).toFixed(2)}px`);
+      panel.style.setProperty("--panel-rx", `${(y * -1.15 * d).toFixed(2)}deg`);
+      panel.style.setProperty("--panel-ry", `${(x * 1.45 * d).toFixed(2)}deg`);
+    }
   };
 
   document.addEventListener("pointermove", (event) => {
@@ -978,7 +1051,6 @@ body {
     } else {
       resetPanel();
     }
-
     if (!rafId) rafId = requestAnimationFrame(render);
   }, { passive: true });
 
