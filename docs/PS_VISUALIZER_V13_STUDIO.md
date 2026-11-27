@@ -62,3 +62,19 @@ The Studio dock saves route settings, preset, motion preference and panel layout
 - `kick` is a transient estimate based on positive changes in LOW/SUB RMS, not a trained drum classifier. Bass notes with sharp attacks can also trigger it. Threshold, attack and release are available in the matrix for tuning.
 - LOW/MID/HIGH values follow the project's existing filter definitions; they are analysis bands, not a mathematically flat, phase-aligned three-way crossover.
 - The visualization remains separate from the audible output. Audio playback and monitor-mode regression tests are still required before merging into the published repository.
+
+## V14 — dashboard layout and collapse behavior
+
+V14 reorganizes the dashboard without changing the audio engine or the three-dimensional scene:
+
+- `MASTER_OUT` and `VECTOR_SCOPE` share a two-column row on desktop.
+- The spectrum visualizer occupies the next full-width row.
+- Crossover and data queue remain below the visualizer.
+- At tablet/mobile widths, the modules stack into one column to preserve usable control widths.
+
+Every panel now receives a real titlebar containing its title, move handle, PIN/DOCK, LOCK and a high-visibility COLLAPSE/EXPAND control. The titlebar is the only visible child while collapsed, so reopening does not depend on hidden content or hover state.
+
+The storage key advances to `ps-visualizer-studio-v14`. Existing V13 scene routes and preset preferences are migrated, but obsolete V13 panel-collapse geometry is intentionally discarded so the first V14 load starts with all panels visible.
+
+Floating panel placeholders now preserve their CSS grid area when a panel is detached.
+
