@@ -635,9 +635,68 @@ body {
   .hud.is-focusing > .panel.is-focused { transform: none; }
 }
 
+
+/* PS FULL PAGE PARALLAX MASK V6 */
+body {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(var(--accent-rgb),.105), transparent 58%),
+    linear-gradient(180deg, #071015 0%, #030608 48%, #020405 100%);
+  background-attachment: fixed;
+}
+.page-parallax-mask {
+  position: fixed;
+  inset: -4vh -3vw;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: .54;
+  transform: translate3d(var(--mask-x,0px), var(--mask-y,0px), 0);
+  transition: opacity 260ms ease;
+  will-change: transform;
+  background:
+    radial-gradient(ellipse 58% 46% at 50% 4%, rgba(var(--accent-rgb),.13), transparent 74%),
+    radial-gradient(ellipse 42% 35% at 78% 62%, rgba(112,72,180,.075), transparent 78%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(var(--accent-rgb),.032) 32px),
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(var(--accent-rgb),.032) 32px);
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.95), rgba(0,0,0,.58) 68%, rgba(0,0,0,.8));
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.95), rgba(0,0,0,.58) 68%, rgba(0,0,0,.8));
+}
+.hud,
+.footer {
+  position: relative;
+  z-index: 2;
+}
+.hud {
+  isolation: auto;
+  transform: none !important;
+}
+.hud::before,
+.hud::after {
+  display: none !important;
+}
+.footer {
+  z-index: 3;
+}
+.footer-logo,
+.footer .ft,
+.footer span {
+  position: relative;
+  z-index: 3;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-parallax-mask {
+    transform: none !important;
+    transition: none !important;
+    will-change: auto;
+  }
+}
+
 </style>
 </head>
 <body>
+<div class="page-parallax-mask" aria-hidden="true"></div>
 
 <div class="hud">
   <header class="panel p-header">
@@ -777,38 +836,39 @@ body {
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const finePointer = window.matchMedia("(pointer: fine)").matches;
   const hud = document.querySelector(".hud");
-  if (!hud || !finePointer) return;
+  const mask = document.querySelector(".page-parallax-mask");
+  if (!finePointer || !hud || !mask) return;
 
   let activePanel = null;
-  let frame = 0;
-  let pointerX = 0.5;
-  let pointerY = 0.18;
+  let rafId = 0;
+  let pointerX = 0;
+  let pointerY = 0;
 
   const resetPanel = () => {
-    if (activePanel) {
-      activePanel.classList.remove("is-focused");
-      activePanel.style.setProperty("--glow-x", "50%");
-      activePanel.style.setProperty("--glow-y", "50%");
-      activePanel = null;
-    }
+    if (!activePanel) return;
+    activePanel.classList.remove("is-focused");
+    activePanel.style.setProperty("--glow-x", "50%");
+    activePanel.style.setProperty("--glow-y", "50%");
+    activePanel = null;
     hud.classList.remove("is-focusing");
   };
 
-  const paintBacklight = () => {
-    frame = 0;
+  const render = () => {
+    rafId = 0;
     if (reduceMotion) return;
-    // La luz se desplaza en dirección opuesta al puntero y siempre queda detrás del HUD.
-    hud.style.setProperty("--backlight-x", `${((1 - pointerX) * 100).toFixed(1)}%`);
-    hud.style.setProperty("--backlight-y", `${((1 - pointerY) * 100).toFixed(1)}%`);
+    // La máscara cubre todo el viewport y se mueve suavemente en sentido inverso.
+    const maxX = Math.min(window.innerWidth * .012, 18);
+    const maxY = Math.min(window.innerHeight * .012, 14);
+    mask.style.setProperty("--mask-x", `${(-pointerX * maxX).toFixed(2)}px`);
+    mask.style.setProperty("--mask-y", `${(-pointerY * maxY).toFixed(2)}px`);
   };
 
-  hud.addEventListener("pointermove", (event) => {
+  document.addEventListener("pointermove", (event) => {
     if (event.pointerType === "touch") return;
-    const rect = hud.getBoundingClientRect();
-    pointerX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    pointerY = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    pointerX = (event.clientX / Math.max(1, window.innerWidth) - .5) * 2;
+    pointerY = (event.clientY / Math.max(1, window.innerHeight) - .5) * 2;
 
-    const panel = event.target.closest(".panel");
+    const panel = event.target.closest(".hud > .panel");
     if (panel && panel.parentElement === hud) {
       if (panel !== activePanel) {
         resetPanel();
@@ -816,22 +876,24 @@ body {
         activePanel.classList.add("is-focused");
         hud.classList.add("is-focusing");
       }
-      const p = activePanel.getBoundingClientRect();
-      activePanel.style.setProperty("--glow-x", `${(((event.clientX-p.left)/p.width)*100).toFixed(1)}%`);
-      activePanel.style.setProperty("--glow-y", `${(((event.clientY-p.top)/p.height)*100).toFixed(1)}%`);
+      const rect = activePanel.getBoundingClientRect();
+      activePanel.style.setProperty("--glow-x", `${(((event.clientX-rect.left)/rect.width)*100).toFixed(1)}%`);
+      activePanel.style.setProperty("--glow-y", `${(((event.clientY-rect.top)/rect.height)*100).toFixed(1)}%`);
     } else {
       resetPanel();
     }
 
-    if (!frame) frame = requestAnimationFrame(paintBacklight);
+    if (!rafId) rafId = requestAnimationFrame(render);
   }, { passive: true });
 
-  hud.addEventListener("pointerleave", () => {
-    pointerX = 0.5;
-    pointerY = 0.18;
+  document.addEventListener("pointerleave", () => {
+    pointerX = 0;
+    pointerY = 0;
     resetPanel();
-    if (!frame) frame = requestAnimationFrame(paintBacklight);
+    if (!rafId) rafId = requestAnimationFrame(render);
   }, { passive: true });
+
+  window.addEventListener("blur", resetPanel);
 })();
 </script>
 
