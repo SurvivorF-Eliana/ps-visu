@@ -1,7 +1,8 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "ps-visualizer-studio-v13";
+  const STORAGE_KEY = "ps-visualizer-studio-v14";
+  const LEGACY_STORAGE_KEY = "ps-visualizer-studio-v13";
   const SOURCES = ["kick", "sub", "bass", "low", "mid", "high", "transient", "width", "rms"];
   const TARGETS = ["shockwave", "terrain", "core", "rings", "particles", "bars.low", "bars.mid", "bars.high", "stereo", "camera"];
   const DEFAULT_ROUTES = [
@@ -29,7 +30,8 @@
 
   function safeRead() {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      const currentSaved = localStorage.getItem(STORAGE_KEY);
+      const saved = JSON.parse(currentSaved || localStorage.getItem(LEGACY_STORAGE_KEY) || "null");
       if (!saved || typeof saved !== "object") return;
       if (PRESETS.includes(saved.preset)) state.preset = saved.preset;
       if (typeof saved.motion === "boolean") state.motion = saved.motion;
@@ -47,7 +49,9 @@
           enabled: route.enabled !== false
         }));
       }
-      if (saved.panels && typeof saved.panels === "object") state.panels = saved.panels;
+      // Do not migrate V13's collapsed panel geometry. V14 starts with a clean,
+      // fully visible layout while preserving audio routes and scene preferences.
+      if (currentSaved && saved.panels && typeof saved.panels === "object") state.panels = saved.panels;
     } catch (error) {
       console.warn("[PS Studio] Could not read saved layout.", error);
     }
@@ -311,18 +315,36 @@
       if (panelRecords.has(key)) return;
       const toolbar = document.createElement("div");
       toolbar.className = "ps-panel-tools";
+
+      const title = document.createElement("span");
+      title.className = "ps-panel-tool-title";
+      const panelTitles = {
+        "p-header": "PS / TRANSPORT",
+        "p-main": "SPECTRUM_ANALYZER",
+        "p-meters": "MASTER_OUT",
+        "p-spatial": "VECTOR_SCOPE",
+        "p-crossover": "3-BAND CROSSOVER",
+        "p-queue": "DATA_QUEUE"
+      };
+      title.textContent = panelTitles[panel.classList[1]] || key.replace(/^p-/, "").replace(/-/g, "_").toUpperCase();
+
       const grip = document.createElement("button");
       grip.type = "button"; grip.className = "ps-panel-grip"; grip.textContent = "⠿";
       grip.title = "Drag floating panel";
+      grip.setAttribute("aria-label", "Move panel");
       const pin = document.createElement("button");
       pin.type = "button"; pin.textContent = "PIN"; pin.title = "Float this panel";
+      pin.setAttribute("aria-label", "Float panel");
       const lock = document.createElement("button");
       lock.type = "button"; lock.textContent = "UNLOCK"; lock.title = "Lock panel position";
+      lock.setAttribute("aria-label", "Lock panel position");
       const fold = document.createElement("button");
-      fold.type = "button"; fold.textContent = "FOLD"; fold.title = "Collapse panel";
-      toolbar.append(grip, pin, lock, fold);
-      panel.appendChild(toolbar);
-      const record = { panel, key, toolbar, grip, pin, lock, fold, placeholder: null, originalStyle: panel.getAttribute("style"), locked: false, collapsed: false };
+      fold.type = "button"; fold.className = "ps-panel-fold";
+      fold.textContent = "COLLAPSE"; fold.title = "Collapse panel";
+      fold.setAttribute("aria-expanded", "true");
+      toolbar.append(title, grip, pin, lock, fold);
+      panel.insertBefore(toolbar, panel.firstChild);
+      const record = { panel, key, toolbar, title, grip, pin, lock, fold, placeholder: null, originalStyle: panel.getAttribute("style"), locked: false, collapsed: false };
       panelRecords.set(key, record);
       pin.addEventListener("click", () => {
         if (record.placeholder) dockPanel(panel);
@@ -340,7 +362,9 @@
       fold.addEventListener("click", () => {
         record.collapsed = !record.collapsed;
         panel.classList.toggle("ps-panel-collapsed", record.collapsed);
-        fold.textContent = record.collapsed ? "OPEN" : "FOLD";
+        fold.textContent = record.collapsed ? "EXPAND" : "COLLAPSE";
+        fold.title = record.collapsed ? "Expand panel" : "Collapse panel";
+        fold.setAttribute("aria-expanded", String(!record.collapsed));
         savePanelLayout();
         persist();
       });
@@ -355,6 +379,7 @@
     const computed = getComputedStyle(panel);
     const placeholder = document.createElement("div");
     placeholder.className = "ps-panel-placeholder";
+    placeholder.style.gridArea = computed.gridArea;
     placeholder.style.gridColumn = computed.gridColumn;
     placeholder.style.gridRow = computed.gridRow;
     placeholder.style.minHeight = Math.max(90, rect.height) + "px";
@@ -437,12 +462,14 @@
         if (record.placeholder) dockPanel(record.panel);
         record.collapsed = !!saved?.collapsed;
         record.panel.classList.toggle("ps-panel-collapsed", record.collapsed);
-        record.fold.textContent = record.collapsed ? "OPEN" : "FOLD";
+        record.fold.textContent = record.collapsed ? "EXPAND" : "COLLAPSE";
+        record.fold.setAttribute("aria-expanded", String(!record.collapsed));
         return;
       }
       record.collapsed = !!saved.collapsed;
       record.panel.classList.toggle("ps-panel-collapsed", record.collapsed);
-      record.fold.textContent = record.collapsed ? "OPEN" : "FOLD";
+      record.fold.textContent = record.collapsed ? "EXPAND" : "COLLAPSE";
+      record.fold.setAttribute("aria-expanded", String(!record.collapsed));
       if (!record.placeholder) floatPanel(record.panel, saved);
       else {
         record.panel.style.left = saved.x + "px";
