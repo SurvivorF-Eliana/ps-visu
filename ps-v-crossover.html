@@ -693,6 +693,99 @@ body {
   }
 }
 
+
+/* PS PAGE PARALLAX V7 — TRANSPARENT FULL-PAGE LAYER */
+body {
+  overflow-x: hidden;
+  background:
+    radial-gradient(ellipse 78% 56% at 50% -8%, rgba(var(--accent-rgb),.13), transparent 70%),
+    radial-gradient(ellipse 46% 42% at 82% 58%, rgba(70,95,130,.075), transparent 76%),
+    linear-gradient(180deg, #071015 0%, #030608 52%, #020405 100%);
+  background-attachment: fixed;
+}
+.page-parallax-mask {
+  position: fixed;
+  inset: -7vh -5vw;
+  z-index: 1;
+  display: block;
+  pointer-events: none;
+  opacity: .78;
+  overflow: hidden;
+  transform: translate3d(var(--mask-x,0px),var(--mask-y,0px),0);
+  transform-origin: center;
+  will-change: transform;
+  background:
+    radial-gradient(ellipse 52% 38% at var(--light-x,50%) var(--light-y,8%),
+      rgba(var(--accent-rgb),.17), transparent 74%),
+    radial-gradient(ellipse 40% 34% at 78% 62%,
+      rgba(122,82,190,.075), transparent 78%),
+    repeating-linear-gradient(0deg, transparent 0 34px, rgba(180,220,235,.035) 35px),
+    repeating-linear-gradient(90deg, transparent 0 34px, rgba(180,220,235,.035) 35px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.86) 76%, #000 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.86) 76%, #000 100%);
+  transition: opacity 220ms ease;
+}
+.page-parallax-mask::before,
+.page-parallax-mask::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 52% 38% at var(--light-x,50%) var(--light-y,8%),
+      rgba(var(--accent-rgb),.12), transparent 74%),
+    repeating-linear-gradient(0deg, transparent 0 34px, rgba(0,225,255,.10) 35px),
+    repeating-linear-gradient(90deg, transparent 0 34px, rgba(0,225,255,.10) 35px);
+  opacity: .22;
+  mix-blend-mode: screen;
+  transform: translate3d(var(--ca-x,0px),var(--ca-y,0px),0);
+}
+.page-parallax-mask::after {
+  background:
+    radial-gradient(ellipse 52% 38% at var(--light-x,50%) var(--light-y,8%),
+      rgba(255,30,120,.10), transparent 74%),
+    repeating-linear-gradient(0deg, transparent 0 34px, rgba(255,25,100,.09) 35px),
+    repeating-linear-gradient(90deg, transparent 0 34px, rgba(255,25,100,.09) 35px);
+  opacity: .16;
+  transform: translate3d(calc(var(--ca-x,0px) * -1),calc(var(--ca-y,0px) * -1),0);
+}
+.hud {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 1580px);
+  transform: perspective(1800px)
+    rotateX(var(--hud-rx,0deg))
+    rotateY(var(--hud-ry,0deg));
+  transform-origin: 50% 35%;
+  transition: transform 180ms ease-out;
+}
+.hud > .panel {
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+.p-main { min-height: 360px; }
+.panel { padding: 14px; }
+.footer {
+  position: relative;
+  z-index: 3;
+}
+@media (max-width: 1100px) {
+  .hud { transform: none !important; }
+}
+@media (max-width: 700px) {
+  .page-parallax-mask { inset: -2vh -2vw; opacity: .48; }
+  .page-parallax-mask::before,
+  .page-parallax-mask::after { opacity: .08; }
+  .hud { transform: none !important; width: 100%; }
+  .p-main { min-height: 300px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-parallax-mask,
+  .page-parallax-mask::before,
+  .page-parallax-mask::after,
+  .hud { transition: none !important; transform: none !important; will-change: auto; }
+}
+
 </style>
 </head>
 <body>
@@ -837,12 +930,11 @@ body {
   const finePointer = window.matchMedia("(pointer: fine)").matches;
   const hud = document.querySelector(".hud");
   const mask = document.querySelector(".page-parallax-mask");
-  if (!finePointer || !hud || !mask) return;
+  if (!finePointer || !hud || !mask || reduceMotion) return;
 
   let activePanel = null;
   let rafId = 0;
-  let pointerX = 0;
-  let pointerY = 0;
+  let nx = 0, ny = 0;
 
   const resetPanel = () => {
     if (!activePanel) return;
@@ -855,18 +947,22 @@ body {
 
   const render = () => {
     rafId = 0;
-    if (reduceMotion) return;
-    // La máscara cubre todo el viewport y se mueve suavemente en sentido inverso.
-    const maxX = Math.min(window.innerWidth * .012, 18);
-    const maxY = Math.min(window.innerHeight * .012, 14);
-    mask.style.setProperty("--mask-x", `${(-pointerX * maxX).toFixed(2)}px`);
-    mask.style.setProperty("--mask-y", `${(-pointerY * maxY).toFixed(2)}px`);
+    const x = nx, y = ny;
+    // La máscara se mueve más que el HUD y en sentido contrario: efecto de profundidad por capas.
+    mask.style.setProperty("--mask-x", `${(-x * 30).toFixed(2)}px`);
+    mask.style.setProperty("--mask-y", `${(-y * 22).toFixed(2)}px`);
+    mask.style.setProperty("--light-x", `${(50 - x * 13).toFixed(1)}%`);
+    mask.style.setProperty("--light-y", `${(8 - y * 9).toFixed(1)}%`);
+    mask.style.setProperty("--ca-x", `${(x * 2.2).toFixed(2)}px`);
+    mask.style.setProperty("--ca-y", `${(y * 1.6).toFixed(2)}px`);
+    hud.style.setProperty("--hud-rx", `${(y * -1.7).toFixed(2)}deg`);
+    hud.style.setProperty("--hud-ry", `${(x * 2.2).toFixed(2)}deg`);
   };
 
   document.addEventListener("pointermove", (event) => {
     if (event.pointerType === "touch") return;
-    pointerX = (event.clientX / Math.max(1, window.innerWidth) - .5) * 2;
-    pointerY = (event.clientY / Math.max(1, window.innerHeight) - .5) * 2;
+    nx = (event.clientX / Math.max(1, window.innerWidth) - .5) * 2;
+    ny = (event.clientY / Math.max(1, window.innerHeight) - .5) * 2;
 
     const panel = event.target.closest(".hud > .panel");
     if (panel && panel.parentElement === hud) {
@@ -876,9 +972,9 @@ body {
         activePanel.classList.add("is-focused");
         hud.classList.add("is-focusing");
       }
-      const rect = activePanel.getBoundingClientRect();
-      activePanel.style.setProperty("--glow-x", `${(((event.clientX-rect.left)/rect.width)*100).toFixed(1)}%`);
-      activePanel.style.setProperty("--glow-y", `${(((event.clientY-rect.top)/rect.height)*100).toFixed(1)}%`);
+      const r = activePanel.getBoundingClientRect();
+      activePanel.style.setProperty("--glow-x", `${(((event.clientX-r.left)/r.width)*100).toFixed(1)}%`);
+      activePanel.style.setProperty("--glow-y", `${(((event.clientY-r.top)/r.height)*100).toFixed(1)}%`);
     } else {
       resetPanel();
     }
@@ -887,12 +983,10 @@ body {
   }, { passive: true });
 
   document.addEventListener("pointerleave", () => {
-    pointerX = 0;
-    pointerY = 0;
+    nx = 0; ny = 0;
     resetPanel();
     if (!rafId) rafId = requestAnimationFrame(render);
-  }, { passive: true });
-
+  });
   window.addEventListener("blur", resetPanel);
 })();
 </script>
