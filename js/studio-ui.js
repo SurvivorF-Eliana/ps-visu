@@ -5,16 +5,16 @@
   const SOURCES = ["kick", "sub", "bass", "low", "mid", "high", "transient", "width", "rms"];
   const TARGETS = ["shockwave", "terrain", "core", "rings", "particles", "bars.low", "bars.mid", "bars.high", "stereo", "camera"];
   const DEFAULT_ROUTES = [
-    { source: "kick", target: "shockwave", amount: 1, threshold: 0.04, enabled: true },
-    { source: "sub", target: "rings", amount: 0.9, threshold: 0.02, enabled: true },
-    { source: "bass", target: "terrain", amount: 1, threshold: 0.02, enabled: true },
-    { source: "mid", target: "core", amount: 0.9, threshold: 0.02, enabled: true },
-    { source: "high", target: "particles", amount: 1, threshold: 0.02, enabled: true },
-    { source: "low", target: "bars.low", amount: 1, threshold: 0.01, enabled: true },
-    { source: "mid", target: "bars.mid", amount: 1, threshold: 0.01, enabled: true },
-    { source: "high", target: "bars.high", amount: 1, threshold: 0.01, enabled: true },
-    { source: "width", target: "stereo", amount: 0.8, threshold: 0.02, enabled: true },
-    { source: "kick", target: "camera", amount: 0.35, threshold: 0.08, enabled: true }
+    { id: "r-kick-wave", source: "kick", target: "shockwave", amount: 1, threshold: 0.04, attack: 0.008, release: 0.16, curve: "linear", invert: false, enabled: true },
+    { id: "r-sub-rings", source: "sub", target: "rings", amount: 0.9, threshold: 0.02, attack: 0.025, release: 0.24, curve: "expo", invert: false, enabled: true },
+    { id: "r-bass-ground", source: "bass", target: "terrain", amount: 1, threshold: 0.02, attack: 0.06, release: 0.3, curve: "linear", invert: false, enabled: true },
+    { id: "r-mid-core", source: "mid", target: "core", amount: 0.9, threshold: 0.02, attack: 0.04, release: 0.2, curve: "linear", invert: false, enabled: true },
+    { id: "r-high-particles", source: "high", target: "particles", amount: 1, threshold: 0.02, attack: 0.008, release: 0.11, curve: "log", invert: false, enabled: true },
+    { id: "r-low-bars", source: "low", target: "bars.low", amount: 1, threshold: 0.01, attack: 0.025, release: 0.15, curve: "linear", invert: false, enabled: true },
+    { id: "r-mid-bars", source: "mid", target: "bars.mid", amount: 1, threshold: 0.01, attack: 0.03, release: 0.16, curve: "linear", invert: false, enabled: true },
+    { id: "r-high-bars", source: "high", target: "bars.high", amount: 1, threshold: 0.01, attack: 0.01, release: 0.1, curve: "log", invert: false, enabled: true },
+    { id: "r-width-spread", source: "width", target: "stereo", amount: 0.8, threshold: 0.02, attack: 0.12, release: 0.35, curve: "linear", invert: false, enabled: true },
+    { id: "r-kick-camera", source: "kick", target: "camera", amount: 0.35, threshold: 0.08, attack: 0.006, release: 0.1, curve: "expo", invert: false, enabled: true }
   ];
   const PRESETS = ["OBSERVATORY", "MACHINE", "SIGNAL", "VOID"];
   const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
@@ -34,11 +34,16 @@
       if (PRESETS.includes(saved.preset)) state.preset = saved.preset;
       if (typeof saved.motion === "boolean") state.motion = saved.motion;
       if (Array.isArray(saved.routes)) {
-        state.routes = saved.routes.slice(0, 32).map(route => ({
+        state.routes = saved.routes.slice(0, 32).map((route, index) => ({
+          id: String(route.id || ("route-" + index)),
           source: SOURCES.includes(route.source) ? route.source : "rms",
           target: TARGETS.includes(route.target) ? route.target : "core",
           amount: clamp(route.amount, 0, 2),
           threshold: clamp(route.threshold, 0, 1),
+          attack: clamp(route.attack ?? 0.02, 0.005, 1),
+          release: clamp(route.release ?? 0.15, 0.005, 2),
+          curve: ["linear", "expo", "log"].includes(route.curve) ? route.curve : "linear",
+          invert: route.invert === true,
           enabled: route.enabled !== false
         }));
       }
@@ -82,6 +87,11 @@
     ".ps-route-range{grid-column:1/3;display:grid;grid-template-columns:1fr 1fr;gap:8px}",
     ".ps-route-range label{font-size:9px;color:#82969b;display:flex;align-items:center;gap:5px}",
     ".ps-route-range input{width:100%;min-width:0;accent-color:#d6ff00}",
+    ".ps-route-advanced{grid-column:1/4;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;margin-top:2px}",
+    ".ps-route-advanced label{font-size:8px;color:#81949a;display:flex;flex-direction:column;gap:3px}",
+    ".ps-route-advanced input[type=range]{width:100%;accent-color:#d6ff00}",
+    ".ps-route-advanced select{width:100%;font-size:9px;padding:4px}",
+    ".ps-route-advanced .ps-route-invert{display:flex;flex-direction:row;align-items:center;gap:4px;padding-top:14px}",
     ".ps-route-remove{background:none;border:1px solid #3d4549;color:#9aa7ab;width:26px;height:26px;cursor:pointer}",
     ".ps-route-remove:hover{border-color:#ff4660;color:#ff7184}",
     ".ps-route-enable{font-size:9px;color:#8fa2a8;display:flex;gap:5px;align-items:center}",
@@ -95,6 +105,8 @@
     ".ps-floating-panel>.ps-panel-tools{position:sticky;float:right;top:0;margin-bottom:-30px}",
     ".ps-floating-panel>.ps-panel-tools button{background:#071216}",
     ".ps-panel-placeholder{pointer-events:none;min-width:0;border:1px dashed rgba(214,255,0,.16);background:rgba(214,255,0,.018);clip-path:none!important}",
+    ".ps-panel-collapsed{height:48px!important;min-height:48px!important;max-height:48px!important;overflow:hidden!important;resize:none!important}",
+    ".ps-panel-collapsed>:not(.ps-panel-tools):not(:first-child){display:none!important}",
     ".ps-panel-grip{cursor:grab;touch-action:none}",
     ".ps-panel-grip:active{cursor:grabbing}",
     "@media(max-width:680px){#ps-studio-dock{right:10px;bottom:64px;width:calc(100vw - 20px);max-height:74vh}#ps-studio-toggle{right:10px;bottom:10px}.ps-panel-tools{opacity:1}.ps-floating-panel{resize:none;width:min(92vw,440px)!important;left:4vw!important;max-height:70vh}}",
@@ -167,6 +179,29 @@
       range.append(amountLabel, thresholdLabel);
       row.appendChild(range);
 
+      const advanced = document.createElement("div");
+      advanced.className = "ps-route-advanced";
+      [["attack", "ATTACK", 0.005, 0.5, 0.005], ["release", "RELEASE", 0.005, 1, 0.01]].forEach(spec => {
+        const label = document.createElement("label");
+        label.textContent = spec[1] + " " + route[spec[0]].toFixed(3) + "s";
+        const input = document.createElement("input");
+        input.type = "range"; input.min = String(spec[2]); input.max = String(spec[3]); input.step = String(spec[4]);
+        input.value = String(route[spec[0]]); input.dataset.key = spec[0]; input.dataset.routeIndex = String(index);
+        label.appendChild(input); advanced.appendChild(label);
+      });
+      const curveLabel = document.createElement("label");
+      curveLabel.textContent = "CURVE";
+      curveLabel.appendChild(makeSelect(["linear", "expo", "log"], route.curve, "curve", index));
+      advanced.appendChild(curveLabel);
+      const invertLabel = document.createElement("label");
+      invertLabel.className = "ps-route-invert";
+      const invert = document.createElement("input");
+      invert.type = "checkbox"; invert.checked = route.invert === true;
+      invert.dataset.key = "invert"; invert.dataset.routeIndex = String(index);
+      invertLabel.append(invert, document.createTextNode("INVERT"));
+      advanced.appendChild(invertLabel);
+      row.appendChild(advanced);
+
       const enabledLabel = document.createElement("label");
       enabledLabel.className = "ps-route-enable";
       const enabled = document.createElement("input");
@@ -221,11 +256,14 @@
     const index = Number(event.target.dataset.routeIndex);
     const key = event.target.dataset.key;
     if (!Number.isInteger(index) || !state.routes[index] || !key) return;
-    const value = key === "enabled" ? event.target.checked : key === "source" || key === "target" ? event.target.value : Number(event.target.value);
+    const value = key === "enabled" || key === "invert"
+      ? event.target.checked
+      : ["source", "target", "curve"].includes(key) ? event.target.value : Number(event.target.value);
     state.routes[index][key] = value;
-    if (key === "amount" || key === "threshold") {
+    if (["amount", "threshold", "attack", "release"].includes(key)) {
       const label = event.target.parentElement;
-      label.firstChild.textContent = key.toUpperCase() + " " + Number(value).toFixed(2);
+      const unit = key === "attack" || key === "release" ? "s" : "";
+      label.firstChild.textContent = key.toUpperCase() + " " + Number(value).toFixed(2) + unit;
     }
     applyConfig(); persist();
   });
@@ -240,7 +278,7 @@
   });
   dock.querySelector("#ps-add-route").addEventListener("click", () => {
     if (state.routes.length >= 32) return;
-    state.routes.push({ source: "rms", target: "core", amount: 0.7, threshold: 0.04, enabled: true });
+    state.routes.push({ id: "route-" + Date.now(), source: "rms", target: "core", amount: 0.7, threshold: 0.04, attack: 0.02, release: 0.15, curve: "linear", invert: false, enabled: true });
     renderRoutes(); applyConfig(); persist();
   });
   dock.querySelector("#ps-reset-routes").addEventListener("click", () => {
@@ -280,9 +318,11 @@
       pin.type = "button"; pin.textContent = "PIN"; pin.title = "Float this panel";
       const lock = document.createElement("button");
       lock.type = "button"; lock.textContent = "UNLOCK"; lock.title = "Lock panel position";
-      toolbar.append(grip, pin, lock);
+      const fold = document.createElement("button");
+      fold.type = "button"; fold.textContent = "FOLD"; fold.title = "Collapse panel";
+      toolbar.append(grip, pin, lock, fold);
       panel.appendChild(toolbar);
-      const record = { panel, key, toolbar, grip, pin, lock, placeholder: null, originalStyle: panel.getAttribute("style"), locked: false };
+      const record = { panel, key, toolbar, grip, pin, lock, fold, placeholder: null, originalStyle: panel.getAttribute("style"), locked: false, collapsed: false };
       panelRecords.set(key, record);
       pin.addEventListener("click", () => {
         if (record.placeholder) dockPanel(panel);
@@ -292,6 +332,13 @@
         record.locked = !record.locked;
         lock.textContent = record.locked ? "LOCKED" : "UNLOCK";
         grip.style.opacity = record.locked ? "0.3" : "1";
+        persist();
+      });
+      fold.addEventListener("click", () => {
+        record.collapsed = !record.collapsed;
+        panel.classList.toggle("ps-panel-collapsed", record.collapsed);
+        fold.textContent = record.collapsed ? "OPEN" : "FOLD";
+        persist();
       });
       enableDrag(record);
     });
@@ -370,10 +417,10 @@
         const rect = panel.getBoundingClientRect();
         layout[record.key] = {
           floating: true, x: rect.left, y: rect.top,
-          width: rect.width, height: rect.height, locked: record.locked
+          width: rect.width, height: rect.height, locked: record.locked, collapsed: record.collapsed
         };
       } else {
-        layout[record.key] = { floating: false };
+        layout[record.key] = { floating: false, collapsed: record.collapsed };
       }
     });
     state.panels = layout;
@@ -384,8 +431,14 @@
       const saved = state.panels[record.key];
       if (!saved?.floating) {
         if (record.placeholder) dockPanel(record.panel);
+        record.collapsed = !!saved?.collapsed;
+        record.panel.classList.toggle("ps-panel-collapsed", record.collapsed);
+        record.fold.textContent = record.collapsed ? "OPEN" : "FOLD";
         return;
       }
+      record.collapsed = !!saved.collapsed;
+      record.panel.classList.toggle("ps-panel-collapsed", record.collapsed);
+      record.fold.textContent = record.collapsed ? "OPEN" : "FOLD";
       if (!record.placeholder) floatPanel(record.panel, saved);
       else {
         record.panel.style.left = saved.x + "px";
