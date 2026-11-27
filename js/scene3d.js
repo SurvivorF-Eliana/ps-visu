@@ -151,6 +151,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
 
   let targetX = 0, targetY = 0, pointerX = 0, pointerY = 0;
   let low = 0, mid = 0, high = 0, rms = 0;
+  let hasAudioMetrics = false;
   let raf = 0, running = !document.hidden;
   const clock = new THREE.Clock();
   const panels = [...hud.querySelectorAll(":scope > .panel")];
@@ -162,6 +163,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
     mid = THREE.MathUtils.clamp(Number(metrics.mid) || 0, 0, 1);
     high = THREE.MathUtils.clamp(Number(metrics.high) || 0, 0, 1);
     rms = THREE.MathUtils.clamp(Number(metrics.rms) || 0, 0, 1);
+    hasAudioMetrics = true;
   }
   window.PSScene3D = Object.freeze({ setAudioMetrics });
 
@@ -203,9 +205,9 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
     root.rotation.y += (pointerX * 0.035 - root.rotation.y) * damping;
     root.rotation.x += (pointerY * 0.018 - root.rotation.x) * damping;
 
-    const lowPulse = low || (0.035 + Math.sin(t * 0.7) * 0.012);
-    const midPulse = mid || (0.025 + Math.sin(t * 1.1 + 1) * 0.01);
-    const highPulse = high || (0.02 + Math.sin(t * 2.1 + 2) * 0.008);
+    const lowPulse = hasAudioMetrics ? low : (0.035 + Math.sin(t * 0.7) * 0.012);
+    const midPulse = hasAudioMetrics ? mid : (0.025 + Math.sin(t * 1.1 + 1) * 0.01);
+    const highPulse = hasAudioMetrics ? high : (0.02 + Math.sin(t * 2.1 + 2) * 0.008);
 
     for (let i = 0; i < terrainPositions.count; i++) {
       const x = terrainBase[i * 3], z = terrainBase[i * 3 + 2];
