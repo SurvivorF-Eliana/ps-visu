@@ -848,6 +848,30 @@ body {
   }
 }
 
+
+/* PS HOVER PARALLAX COMPOSITION V9
+   Keep per-panel motion active while focus/hover effects are applied. */
+.hud.is-focusing > .panel:not(.is-focused) {
+  transform:
+    perspective(1200px)
+    translate3d(var(--panel-x,0px), var(--panel-y,0px), var(--panel-z,0px))
+    rotateX(var(--panel-rx,0deg))
+    rotateY(var(--panel-ry,0deg))
+    scale(var(--panel-scale,.992));
+  filter: blur(1.3px) brightness(.72) saturate(.8);
+  opacity: .78;
+}
+.hud.is-focusing > .panel.is-focused {
+  transform:
+    perspective(1200px)
+    translate3d(var(--panel-x,0px), calc(var(--panel-y,0px) - var(--panel-lift,9px)), var(--panel-z,28px))
+    rotateX(var(--panel-rx,0deg))
+    rotateY(var(--panel-ry,0deg))
+    scale(var(--panel-scale,1.018));
+  filter: brightness(1.08) saturate(1.05);
+  opacity: 1;
+}
+
 </style>
 </head>
 <body>
