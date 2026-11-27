@@ -275,7 +275,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.m
     raf = 0;
     if (!running) return;
     const dt = Math.min(clock.getDelta(), 0.05);
-    const t = clock.elapsedTime;
+    const t = visualConfig.motion ? clock.elapsedTime : 0;
     const damping = 1 - Math.exp(-dt * 5.5);
     const motionFactor = visualConfig.motion ? 1 : 0;
     pointerX += ((targetX * motionFactor) - pointerX) * damping;
