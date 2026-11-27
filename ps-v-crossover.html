@@ -1245,7 +1245,7 @@ body {
   }
   .hud > .p-main { min-height: 390px; }
 }
-@media (max-width: 680px) {
+@media (max-width: 860px) {
   .hud {
     grid-template-columns: minmax(0,1fr);
     grid-template-areas:
@@ -1256,7 +1256,12 @@ body {
       "cross"
       "queue";
   }
-  .hud > .panel { grid-column: 1 !important; }
+  .hud > .panel { grid-column: auto !important; }
+}
+@media (max-width: 680px) {
+  .hud {
+    grid-template-columns: minmax(0,1fr);
+  }
   .hud > .p-main { min-height: 330px; }
   .p-meters .metrics { grid-template-columns: 1fr; }
   .p-meters .metric:last-child { grid-column: auto; }
