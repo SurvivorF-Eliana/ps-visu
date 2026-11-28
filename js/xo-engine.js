@@ -39,9 +39,6 @@ let graphReady = false;
 let dryGain, gainLow, gainMid, gainHigh;
 let anaLowL, anaLowR, anaMidL, anaMidR, anaHighL, anaHighR;
 let anaSubL, anaSubR;
-let previousLowEnergy = 0, previousSubEnergy = 0, previousHighEnergy = 0;
-let kickEnvelope = 0, transientEnvelope = 0, lastMetricsTimestamp = 0;
-const analyserBuffers = new WeakMap();
 let listenMode = 'bypass';
 let monoNode = null;
 
@@ -401,37 +398,6 @@ function pearson(a, b) {
 
 function isMonoActive() { return monoEnabled || bassMonoEnabled; }
 
-// Read-only RMS taps with reusable buffers: analysis never changes the audible graph.
-function readAnalyserRms(analyser, rightAnalyser = null) {
-  if (!analyser) return 0;
-  let left = analyserBuffers.get(analyser);
-  if (!left || left.length !== analyser.fftSize) {
-    left = new Float32Array(analyser.fftSize);
-    analyserBuffers.set(analyser, left);
-  }
-  analyser.getFloatTimeDomainData(left);
-  let sum = 0;
-  for (let i = 0; i < left.length; i++) sum += left[i] * left[i];
-
-  if (rightAnalyser) {
-    let right = analyserBuffers.get(rightAnalyser);
-    if (!right || right.length !== rightAnalyser.fftSize) {
-      right = new Float32Array(rightAnalyser.fftSize);
-      analyserBuffers.set(rightAnalyser, right);
-    }
-    rightAnalyser.getFloatTimeDomainData(right);
-    for (let i = 0; i < right.length; i++) sum += right[i] * right[i];
-    return Math.min(1, Math.sqrt(sum / (left.length + right.length)) * 4);
-  }
-  return Math.min(1, Math.sqrt(sum / left.length) * 4);
-}
-
-function followEnvelope(current, target, attackSeconds, releaseSeconds, deltaSeconds) {
-  const time = target > current ? attackSeconds : releaseSeconds;
-  const coefficient = 1 - Math.exp(-deltaSeconds / Math.max(0.001, time));
-  return current + (target - current) * coefficient;
-}
-
 function engineLoop(timestamp) {
   if (!isPlaying) { animId = null; return; }
   const cur = ctx.currentTime - startTime + pausedAt;
@@ -514,50 +480,6 @@ function engineLoop(timestamp) {
     const hL = new Float32Array(anaHighL.fftSize), hR = new Float32Array(anaHighR.fftSize);
     anaHighL.getFloatTimeDomainData(hL); anaHighR.getFloatTimeDomainData(hR);
     document.getElementById('corrHighVal').textContent = pearson(hL, hR).toFixed(2);
-  }
-
-  if (window.PSScene3D?.setAudioMetrics && anaMain) {
-    const deltaSeconds = lastMetricsTimestamp
-      ? Math.min(0.05, Math.max(0.001, (timestamp - lastMetricsTimestamp) / 1000))
-      : 1 / 60;
-    lastMetricsTimestamp = timestamp;
-
-    const lowEnergy = readAnalyserRms(anaLowL, anaLowR);
-    const subEnergy = readAnalyserRms(anaSubL, anaSubR);
-    const midEnergy = readAnalyserRms(anaMidL, anaMidR);
-    const highEnergy = readAnalyserRms(anaHighL, anaHighR);
-    const masterEnergy = readAnalyserRms(anaMain);
-
-    // Onset follows positive low/high energy changes, not the sustained bass envelope.
-    const kickAttack = Math.min(1, Math.max(0,
-      (lowEnergy - previousLowEnergy) * 11 +
-      (subEnergy - previousSubEnergy) * 13
-    ));
-    const highAttack = Math.min(1, Math.max(0,
-      (highEnergy - previousHighEnergy) * 14
-    ));
-    kickEnvelope = followEnvelope(kickEnvelope, kickAttack, 0.012, 0.16, deltaSeconds);
-    transientEnvelope = followEnvelope(transientEnvelope, highAttack, 0.008, 0.095, deltaSeconds);
-    previousLowEnergy = lowEnergy;
-    previousSubEnergy = subEnergy;
-    previousHighEnergy = highEnergy;
-
-    const stereoWidth = Math.max(0, Math.min(1, (1 - corrSmooth) * 0.5));
-    const audioMetrics = {
-      low: lowEnergy,
-      sub: subEnergy,
-      bass: lowEnergy,
-      mid: midEnergy,
-      high: highEnergy,
-      rms: masterEnergy,
-      kick: kickEnvelope,
-      transient: transientEnvelope,
-      width: stereoWidth
-    };
-    window.PSScene3D.setAudioMetrics(audioMetrics);
-    if (updateDom) {
-      window.dispatchEvent(new CustomEvent('ps-audio-metrics', { detail: audioMetrics }));
-    }
   }
 
   if (updateDom) {
